@@ -146,8 +146,8 @@ logo_img = _load_logo_image()
 if logo_img is not None:
     st.image(logo_img, width=180)
 
-st.title("Dashboard de Carga Máquina (Simulação de Cenários)")
-st.caption("Simule cenários ajustando OEE, eficiência de MO, capacidade e quantidades por modelo (coluna C).")
+st.title("Dashboard de Carga Máquina ")
+st.caption("Simulação cenários ajustando OEE, eficiência de MO, capacidade e quantidades por modelo.")
 
 
 # =========================================================
@@ -226,7 +226,7 @@ with st.sidebar:
 # Quantidade por modelo (campos abertos)
 # =========================================================
 st.subheader("Quantidade por modelo")
-st.caption("Digite a quantidade planejada por modelo (coluna C). Isso escala a carga usando TEMPO INDIVIDUAL (coluna G).")
+st.caption("Digite a quantidade planejada por modelo. Isso escala a carga usando TEMPO INDIVIDUAL.")
 
 qty_map: Dict[str, float] = {}
 sel_C = sel_modelo_c if isinstance(sel_modelo_c, list) else []
