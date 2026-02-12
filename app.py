@@ -234,7 +234,7 @@ sel_C = sel_modelo_c if isinstance(sel_modelo_c, list) else []
 if col_C is None:
     st.info("A coluna C (Modelo) é obrigatória para simular quantidades por modelo.")
 elif len(sel_C) == 0:
-    st.info("Selecione ao menos um modelo na coluna C para digitar as quantidades.")
+    st.info("Selecione ao menos um modelo para digitar as quantidades.")
 else:
     # QTD_BASE por modelo (fallback = 1)
     if col_qtd_base:
