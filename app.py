@@ -27,24 +27,27 @@ st.set_page_config(
 
 
 # =========================================================
-# CSS - ESTILO INDUSTRIA 4.0 / TESLA
+# CSS - INDUSTRIA 4.0 / TESLA / SALA DE CONTROLE
 # =========================================================
 st.markdown("""
 <style>
     .stApp {
-        background: linear-gradient(180deg, #0f1116 0%, #151922 100%);
+        background:
+            radial-gradient(circle at top left, rgba(45,156,255,0.10), transparent 26%),
+            radial-gradient(circle at top right, rgba(139,92,246,0.10), transparent 24%),
+            linear-gradient(180deg, #0a0d12 0%, #0f141d 50%, #131925 100%);
         color: #E8EDF7;
     }
 
     .block-container {
-        padding-top: 1.2rem;
+        padding-top: 0.8rem;
         padding-bottom: 1rem;
         max-width: 96%;
     }
 
     h1, h2, h3, h4, h5, h6 {
         color: #F5F7FB !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
         letter-spacing: 0.2px;
     }
 
@@ -53,8 +56,60 @@ st.markdown("""
     }
 
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #11151d 0%, #191f2b 100%);
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)),
+            linear-gradient(180deg, #0f131b 0%, #171d29 100%);
         border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .metal-header {
+        position: relative;
+        overflow: hidden;
+        border-radius: 22px;
+        padding: 18px 24px;
+        margin-bottom: 18px;
+        background:
+            linear-gradient(135deg, #616975 0%, #2e3540 18%, #8b949f 34%, #232a34 48%, #9aa4b0 64%, #2b323d 82%, #5f6874 100%);
+        border: 1px solid rgba(255,255,255,0.20);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.28),
+            inset 0 -1px 0 rgba(0,0,0,0.25),
+            0 10px 30px rgba(0,0,0,0.28);
+    }
+
+    .metal-header:before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.14) 30%, transparent 60%),
+            repeating-linear-gradient(
+                115deg,
+                rgba(255,255,255,0.03) 0px,
+                rgba(255,255,255,0.03) 2px,
+                transparent 2px,
+                transparent 10px
+            );
+        mix-blend-mode: screen;
+        pointer-events: none;
+    }
+
+    .metal-title {
+        font-size: 2rem;
+        font-weight: 900;
+        color: #F8FAFC;
+        text-shadow:
+            0 1px 0 rgba(0,0,0,0.35),
+            0 0 10px rgba(255,255,255,0.14);
+        margin: 0;
+    }
+
+    .metal-subtitle {
+        margin-top: 6px;
+        color: #E6ECF5;
+        font-size: 0.93rem;
+        font-weight: 500;
+        letter-spacing: 0.3px;
     }
 
     div[data-testid="stMetric"] {
@@ -62,78 +117,76 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 18px;
         padding: 14px 16px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+        box-shadow:
+            0 4px 16px rgba(0,0,0,0.18),
+            inset 0 1px 0 rgba(255,255,255,0.03);
     }
 
     div[data-testid="stMetricLabel"] {
         color: #AEB7C6 !important;
         font-size: 0.9rem !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
     }
 
     div[data-testid="stMetricValue"] {
         color: #FFFFFF !important;
-        font-weight: 800 !important;
+        font-weight: 900 !important;
+        text-shadow: 0 0 12px rgba(45,156,255,0.10);
     }
 
     .tesla-card {
         border-radius: 20px;
         padding: 18px 18px 14px 18px;
         margin-bottom: 14px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+        box-shadow:
+            0 8px 24px rgba(0,0,0,0.24),
+            0 0 18px rgba(45,156,255,0.06);
         border: 1px solid rgba(255,255,255,0.08);
-        background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
         backdrop-filter: blur(8px);
     }
 
-    .card-green {
-        border-left: 6px solid #14C38E;
-    }
-
-    .card-blue {
-        border-left: 6px solid #2D9CFF;
-    }
-
-    .card-orange {
-        border-left: 6px solid #FFB020;
-    }
-
-    .card-red {
-        border-left: 6px solid #FF5A5F;
-    }
-
-    .card-purple {
-        border-left: 6px solid #8B5CF6;
-    }
+    .card-green { border-left: 6px solid #14C38E; box-shadow: 0 0 18px rgba(20,195,142,0.12), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-blue { border-left: 6px solid #2D9CFF; box-shadow: 0 0 18px rgba(45,156,255,0.14), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-orange { border-left: 6px solid #FFB020; box-shadow: 0 0 18px rgba(255,176,32,0.12), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-red { border-left: 6px solid #FF5A5F; box-shadow: 0 0 18px rgba(255,90,95,0.14), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-purple { border-left: 6px solid #8B5CF6; box-shadow: 0 0 18px rgba(139,92,246,0.14), 0 8px 24px rgba(0,0,0,0.24); }
 
     .card-title {
         color: #B6C0CF;
-        font-size: 0.88rem;
+        font-size: 0.82rem;
         margin-bottom: 8px;
         text-transform: uppercase;
-        letter-spacing: 0.6px;
-        font-weight: 700;
+        letter-spacing: 0.8px;
+        font-weight: 800;
     }
 
     .card-value {
         color: #FFFFFF;
         font-size: 2rem;
-        font-weight: 800;
-        line-height: 1.1;
+        font-weight: 900;
+        line-height: 1.05;
+        text-shadow: 0 0 12px rgba(255,255,255,0.06);
     }
 
     .card-sub {
         color: #93A0B5;
-        font-size: 0.84rem;
-        margin-top: 6px;
+        font-size: 0.82rem;
+        margin-top: 8px;
     }
 
     .section-panel {
         border-radius: 20px;
         padding: 18px;
-        background: rgba(255,255,255,0.04);
-        border: 1px solid rgba(255,255,255,0.07);
-        box-shadow: 0 8px 24px rgba(0,0,0,0.16);
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025));
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow:
+            0 8px 24px rgba(0,0,0,0.20),
+            inset 0 1px 0 rgba(255,255,255,0.04);
         margin-bottom: 16px;
     }
 
@@ -156,11 +209,65 @@ st.markdown("""
         background: rgba(255,255,255,0.04);
         color: #DCE3ED;
         padding: 10px 18px;
+        border: 1px solid rgba(255,255,255,0.06);
     }
 
     .stTabs [aria-selected="true"] {
         background: linear-gradient(90deg, #2D9CFF, #8B5CF6) !important;
         color: white !important;
+        box-shadow: 0 0 18px rgba(45,156,255,0.16);
+    }
+
+    .gargalo-panel {
+        border-radius: 18px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-top {
+        border-left: 6px solid #FF5A5F;
+        box-shadow: 0 0 16px rgba(255,90,95,0.12), 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-mid {
+        border-left: 6px solid #FFB020;
+        box-shadow: 0 0 16px rgba(255,176,32,0.10), 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-ok {
+        border-left: 6px solid #14C38E;
+        box-shadow: 0 0 16px rgba(20,195,142,0.10), 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-rank {
+        font-size: 0.78rem;
+        color: #9FB0C7;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 800;
+    }
+
+    .gargalo-name {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #F8FAFC;
+        margin-top: 2px;
+    }
+
+    .gargalo-kpi {
+        font-size: 1.35rem;
+        font-weight: 900;
+        color: #FFFFFF;
+        margin-top: 4px;
+    }
+
+    .gargalo-sub {
+        font-size: 0.8rem;
+        color: #9BA8BC;
+        margin-top: 4px;
     }
 
     hr {
@@ -241,17 +348,13 @@ def _find_col(df: pd.DataFrame, contains: str) -> Optional[str]:
 def _find_col_exact_or_contains(df: pd.DataFrame, target: str) -> Optional[str]:
     if df is None or df.empty:
         return None
-
     target_norm = str(target).strip().lower()
-
     for c in df.columns:
         if str(c).strip().lower() == target_norm:
             return c
-
     for c in df.columns:
         if target_norm in str(c).strip().lower():
             return c
-
     return None
 
 
@@ -281,7 +384,6 @@ def _load_logo_image() -> Optional[Image.Image]:
                 return Image.open(fn)
             except Exception:
                 pass
-
     for fn in os.listdir("."):
         if fn.lower().startswith("logo") and os.path.isfile(fn):
             try:
@@ -314,15 +416,41 @@ def _card_html(title: str, value: str, subtitle: str = "", color_class: str = "c
     """
 
 
+def _gargalo_html(rank: int, nome: str, util: float, carga: float, cap: float) -> str:
+    if util >= 100:
+        cls = "gargalo-top"
+    elif util >= 85:
+        cls = "gargalo-mid"
+    else:
+        cls = "gargalo-ok"
+
+    return f"""
+    <div class="gargalo-panel {cls}">
+        <div class="gargalo-rank">#{rank} • RANKING DE GARGALO</div>
+        <div class="gargalo-name">{nome}</div>
+        <div class="gargalo-kpi">{_fmt_br(util,1)}%</div>
+        <div class="gargalo-sub">Carga: {_fmt_br(carga)} h • Capacidade efetiva: {_fmt_br(cap)} h</div>
+    </div>
+    """
+
+
 # =========================================================
 # HEADER
 # =========================================================
 logo_img = _load_logo_image()
-if logo_img is not None:
-    st.image(logo_img, width=180)
 
-st.title("Dashboard de Carga Máquina e Simulação de Mão de Obra")
-st.caption("Base fixa no Excel da pasta • Visual industrial 4.0 • Simulação de cenários")
+col_logo, col_head = st.columns([0.12, 0.88])
+with col_logo:
+    if logo_img is not None:
+        st.image(logo_img, width=140)
+
+with col_head:
+    st.markdown("""
+    <div class="metal-header">
+        <div class="metal-title">Dashboard de Carga Máquina e Mão de Obra</div>
+        <div class="metal-subtitle">Painel industrial 4.0 • Simulação de cenários • Sala de controle operacional</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # =========================================================
@@ -387,14 +515,9 @@ if not df_ind.empty:
     if col_ind_setor is not None and col_ind_moi is not None:
         tabela_indiretos = df_ind[[col_ind_setor, col_ind_moi]].copy()
         tabela_indiretos.columns = ["SETOR", "MOI"]
-
         tabela_indiretos["SETOR"] = tabela_indiretos["SETOR"].astype(str).str.strip()
         tabela_indiretos["MOI"] = tabela_indiretos["MOI"].apply(_to_float).fillna(0)
-
-        tabela_indiretos = tabela_indiretos[
-            tabela_indiretos["SETOR"].str.upper() != "TOTAL"
-        ].copy()
-
+        tabela_indiretos = tabela_indiretos[tabela_indiretos["SETOR"].str.upper() != "TOTAL"].copy()
         moi_total_fixo = float(tabela_indiretos["MOI"].sum())
 
 
@@ -455,9 +578,7 @@ else:
             pd.DataFrame({
                 "MODELO": _col_series(df0, col_C).astype(str),
                 "QTD_BASE": base_series,
-            })
-            .groupby("MODELO")["QTD_BASE"]
-            .first()
+            }).groupby("MODELO")["QTD_BASE"].first()
         )
     else:
         base_by_model = pd.Series(dtype=float)
@@ -585,14 +706,34 @@ with aba1:
     agg["util_pct"] = np.where(agg["cap_efet_h"] > 0, agg["horas"] / agg["cap_efet_h"] * 100.0, np.nan)
     agg["cor"] = agg["util_pct"].apply(lambda x: _util_color(float(x)) if not np.isnan(x) else "#64748B")
 
-    c1, c2 = st.columns([1.2, 1.0], gap="large")
+    # Ranking gargalos
+    agg_gargalos = agg.sort_values("util_pct", ascending=False).copy()
+
+    c1, c2 = st.columns([1.15, 0.85], gap="large")
 
     with c1:
         st.markdown('<div class="section-panel">', unsafe_allow_html=True)
         st.subheader("Carga por agrupamento")
-        chart = alt.Chart(agg).mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6).encode(
+
+        base = alt.Chart(agg).encode(
             x=alt.X("horas:Q", title="Horas (carga)"),
-            y=alt.Y("_GRUPO_:N", sort="-x", title=""),
+            y=alt.Y("_GRUPO_:N", sort="-x", title="")
+        )
+
+        glow = base.mark_bar(
+            cornerRadiusTopRight=6,
+            cornerRadiusBottomRight=6,
+            opacity=0.18,
+            size=24
+        ).encode(
+            color=alt.Color("cor:N", scale=None, legend=None)
+        )
+
+        bars = base.mark_bar(
+            cornerRadiusTopRight=6,
+            cornerRadiusBottomRight=6,
+            size=16
+        ).encode(
             color=alt.Color("cor:N", scale=None, legend=None),
             tooltip=[
                 alt.Tooltip("_GRUPO_:N", title="Grupo"),
@@ -600,28 +741,103 @@ with aba1:
                 alt.Tooltip("cap_efet_h:Q", title="Cap. efetiva", format=",.2f"),
                 alt.Tooltip("util_pct:Q", title="Utilização %", format=",.1f"),
             ],
-        ).properties(height=min(600, 25 * max(8, len(agg))))
+        ).properties(height=min(600, 28 * max(8, len(agg))))
 
         cap_line = alt.Chart(pd.DataFrame({"x": [cap_horas_efetivas]})).mark_rule(
             strokeDash=[6, 4],
-            color="#FFFFFF"
+            color="#E2E8F0",
+            size=2
         ).encode(x="x:Q")
-        st.altair_chart(chart + cap_line, use_container_width=True)
+
+        st.altair_chart(glow + bars + cap_line, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
         st.markdown('<div class="section-panel">', unsafe_allow_html=True)
+        st.subheader("Ranking de Gargalos")
+
+        top_n = agg_gargalos.head(5).reset_index(drop=True)
+        if top_n.empty:
+            st.info("Sem dados para ranking.")
+        else:
+            for i, row in top_n.iterrows():
+                st.markdown(
+                    _gargalo_html(
+                        rank=i + 1,
+                        nome=str(row["_GRUPO_"]),
+                        util=float(row["util_pct"]) if pd.notna(row["util_pct"]) else 0.0,
+                        carga=float(row["horas"]) if pd.notna(row["horas"]) else 0.0,
+                        cap=float(row["cap_efet_h"]) if pd.notna(row["cap_efet_h"]) else 0.0,
+                    ),
+                    unsafe_allow_html=True
+                )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    c3, c4 = st.columns([1.0, 1.0], gap="large")
+
+    with c3:
+        st.markdown('<div class="section-panel">', unsafe_allow_html=True)
         st.subheader("TAKT (soma)")
-        chart2 = alt.Chart(agg).mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6).encode(
+
+        base2 = alt.Chart(agg).encode(
             x=alt.X("takt_h:Q", title="Horas TAKT"),
-            y=alt.Y("_GRUPO_:N", sort="-x", title=""),
-            color=alt.value("#2D9CFF"),
+            y=alt.Y("_GRUPO_:N", sort="-x", title="")
+        )
+
+        glow2 = base2.mark_bar(
+            cornerRadiusTopRight=6,
+            cornerRadiusBottomRight=6,
+            opacity=0.18,
+            size=24,
+            color="#2D9CFF"
+        )
+
+        bars2 = base2.mark_bar(
+            cornerRadiusTopRight=6,
+            cornerRadiusBottomRight=6,
+            size=16,
+            color="#2D9CFF"
+        ).encode(
             tooltip=[
                 alt.Tooltip("_GRUPO_:N", title="Grupo"),
                 alt.Tooltip("takt_h:Q", title="TAKT somado", format=",.2f"),
             ],
-        ).properties(height=min(600, 25 * max(8, len(agg))))
-        st.altair_chart(chart2, use_container_width=True)
+        ).properties(height=min(520, 26 * max(8, len(agg))))
+
+        st.altair_chart(glow2 + bars2, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown('<div class="section-panel">', unsafe_allow_html=True)
+        st.subheader("Painel Operacional")
+
+        resumo_oper = pd.DataFrame({
+            "Indicador": ["Carga Total", "Cap. Efetiva", "Cap. Programada"],
+            "Valor": [total_horas, cap_horas_efetivas, cap_horas_programadas],
+            "Cor": ["#2D9CFF", "#14C38E", "#8B5CF6"]
+        })
+
+        chart_ops = alt.Chart(resumo_oper).mark_bar(cornerRadiusEnd=8).encode(
+            x=alt.X("Valor:Q", title="Horas"),
+            y=alt.Y("Indicador:N", title=""),
+            color=alt.Color("Cor:N", scale=None, legend=None),
+            tooltip=[
+                alt.Tooltip("Indicador:N", title="Indicador"),
+                alt.Tooltip("Valor:Q", title="Horas", format=",.2f"),
+            ],
+        ).properties(height=240)
+
+        st.altair_chart(chart_ops, use_container_width=True)
+
+        st.markdown(
+            f"""
+            <div class="small-note">
+                Gargalo principal: <b>{str(agg_gargalos.iloc[0]['_GRUPO_']) if not agg_gargalos.empty else '-'}</b><br>
+                Maior utilização: <b>{_fmt_br(float(agg_gargalos.iloc[0]['util_pct']),1)}%</b> if not agg_gargalos.empty else '-'
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
@@ -707,7 +923,14 @@ with aba2:
     ocupacao_pessoas = (total_geral / pessoas_disponiveis * 100.0) if pessoas_disponiveis > 0 else np.nan
 
     cor_saldo = "card-green" if saldo_pessoas >= 0 else "card-red"
-    cor_ocup = "card-green" if (not np.isnan(ocupacao_pessoas) and ocupacao_pessoas <= 85) else ("card-orange" if (not np.isnan(ocupacao_pessoas) and ocupacao_pessoas <= 100) else "card-red")
+    if np.isnan(ocupacao_pessoas):
+        cor_ocup = "card-blue"
+    elif ocupacao_pessoas <= 85:
+        cor_ocup = "card-green"
+    elif ocupacao_pessoas <= 100:
+        cor_ocup = "card-orange"
+    else:
+        cor_ocup = "card-red"
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -717,7 +940,6 @@ with aba2:
             f"Base: {_fmt_br(MINUTOS_POR_PESSOA_DIA,0)} min/pessoa/dia",
             "card-blue"
         ), unsafe_allow_html=True)
-
     with c2:
         st.markdown(_card_html(
             "MOI Fixa",
@@ -725,7 +947,6 @@ with aba2:
             "Lida da aba INDIRETOS",
             "card-purple"
         ), unsafe_allow_html=True)
-
     with c3:
         st.markdown(_card_html(
             "Total MOD + MOI",
@@ -742,7 +963,6 @@ with aba2:
             "Valor informado para comparação",
             "card-green"
         ), unsafe_allow_html=True)
-
     with c5:
         st.markdown(_card_html(
             "Saldo de Pessoas",
@@ -750,7 +970,6 @@ with aba2:
             "Positivo = sobra • Negativo = falta",
             cor_saldo
         ), unsafe_allow_html=True)
-
     with c6:
         st.markdown(_card_html(
             "Ocupação da Equipe",
@@ -778,13 +997,25 @@ with aba2:
         st.markdown('<div class="section-panel">', unsafe_allow_html=True)
         st.subheader("MOD por Descrição CR")
 
-        graf_mo = alt.Chart(agg_mo).mark_bar(
-            cornerRadiusTopRight=6,
-            cornerRadiusBottomRight=6
-        ).encode(
+        base3 = alt.Chart(agg_mo).encode(
             x=alt.X("mod_pessoas:Q", title="Pessoas necessárias (MOD)"),
-            y=alt.Y("_DESC_CR_:N", sort="-x", title="Descrição CR"),
-            color=alt.value("#2D9CFF"),
+            y=alt.Y("_DESC_CR_:N", sort="-x", title="Descrição CR")
+        )
+
+        glow3 = base3.mark_bar(
+            cornerRadiusTopRight=6,
+            cornerRadiusBottomRight=6,
+            opacity=0.20,
+            size=24,
+            color="#2D9CFF"
+        )
+
+        bars3 = base3.mark_bar(
+            cornerRadiusTopRight=6,
+            cornerRadiusBottomRight=6,
+            size=16,
+            color="#2D9CFF"
+        ).encode(
             tooltip=[
                 alt.Tooltip("_DESC_CR_:N", title="Descrição CR"),
                 alt.Tooltip("minutos_totais:Q", title="Minutos totais", format=",.2f"),
@@ -793,7 +1024,7 @@ with aba2:
             ],
         ).properties(height=min(720, 30 * max(8, len(agg_mo))))
 
-        st.altair_chart(graf_mo, use_container_width=True)
+        st.altair_chart(glow3 + bars3, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with g2:
@@ -806,9 +1037,16 @@ with aba2:
             "Cor": ["#2D9CFF", "#8B5CF6", "#FFB020", "#14C38E"]
         })
 
-        graf_resumo = alt.Chart(resumo_pessoas).mark_bar(cornerRadiusEnd=8).encode(
+        chart_neon_h = alt.Chart(resumo_pessoas).encode(
             x=alt.X("Pessoas:Q", title="Pessoas"),
-            y=alt.Y("Tipo:N", title=""),
+            y=alt.Y("Tipo:N", title="")
+        )
+
+        glow_h = chart_neon_h.mark_bar(cornerRadiusEnd=8, opacity=0.20, size=26).encode(
+            color=alt.Color("Cor:N", scale=None, legend=None)
+        )
+
+        bars_h = chart_neon_h.mark_bar(cornerRadiusEnd=8, size=18).encode(
             color=alt.Color("Cor:N", scale=None, legend=None),
             tooltip=[
                 alt.Tooltip("Tipo:N", title="Tipo"),
@@ -816,21 +1054,25 @@ with aba2:
             ],
         ).properties(height=260)
 
-        st.altair_chart(graf_resumo, use_container_width=True)
+        st.altair_chart(glow_h + bars_h, use_container_width=True)
 
         comparativo = pd.DataFrame({
             "Categoria": ["Necessárias Total", "Disponíveis"],
-            "Valor": [total_geral, pessoas_disponiveis]
+            "Valor": [total_geral, pessoas_disponiveis],
+            "Cor": ["#FF5A5F", "#14C38E"]
         })
 
-        graf_compare = alt.Chart(comparativo).mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8).encode(
+        chart_v = alt.Chart(comparativo).encode(
             x=alt.X("Categoria:N", title=""),
-            y=alt.Y("Valor:Q", title="Pessoas"),
-            color=alt.condition(
-                alt.datum.Categoria == "Disponíveis",
-                alt.value("#14C38E"),
-                alt.value("#FF5A5F")
-            ),
+            y=alt.Y("Valor:Q", title="Pessoas")
+        )
+
+        glow_v = chart_v.mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8, opacity=0.18, size=42).encode(
+            color=alt.Color("Cor:N", scale=None, legend=None)
+        )
+
+        bars_v = chart_v.mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8, size=30).encode(
+            color=alt.Color("Cor:N", scale=None, legend=None),
             tooltip=[
                 alt.Tooltip("Categoria:N", title="Categoria"),
                 alt.Tooltip("Valor:Q", title="Pessoas", format=",.2f"),
@@ -838,7 +1080,7 @@ with aba2:
         ).properties(height=260)
 
         st.subheader("Comparativo direto")
-        st.altair_chart(graf_compare, use_container_width=True)
+        st.altair_chart(glow_v + bars_v, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
