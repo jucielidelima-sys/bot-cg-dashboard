@@ -38,12 +38,31 @@ st.markdown("""
             linear-gradient(180deg, #0a0d12 0%, #0f141d 50%, #131925 100%);
         color: #E8EDF7;
     }
+    
+.block-container {
+    padding-top: 0rem !important;
+    padding-bottom: 1rem;
+    max-width: 96%;
+}
 
-    .block-container {
-        padding-top: 0.8rem;
-        padding-bottom: 1rem;
-        max-width: 96%;
-    }
+div[data-testid="stAppViewContainer"] > .main {
+    padding-top: 0rem !important;
+}
+
+section.main > div {
+    padding-top: 0rem !important;
+}
+
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 0rem !important;
+}
+
+header[data-testid="stHeader"] > div {
+    height: 0rem !important;
+}
+    
+    
 
     h1, h2, h3, h4, h5, h6 {
         color: #F5F7FB !important;
