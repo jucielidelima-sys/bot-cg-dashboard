@@ -578,7 +578,7 @@ with st.sidebar:
     )
 
     st.divider()
-    st.header("4) IA simples")
+    st.header("4) IA ")
 
     crescimento_pct = st.slider("Crescimento previsto da demanda (%)", min_value=0, max_value=100, value=15, step=5)
     fator_previsao = 1.0 + (crescimento_pct / 100.0)
