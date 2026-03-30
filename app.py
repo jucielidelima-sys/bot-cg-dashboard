@@ -832,7 +832,7 @@ with aba1:
 
     with c4:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
-        st.subheader("Previsão de Gargalo (IA simples)")
+        st.subheader("Previsão de Gargalo")
 
         if agg_pred.empty:
             st.info("Sem dados para projeção.")
