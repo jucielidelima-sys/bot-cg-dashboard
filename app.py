@@ -588,7 +588,6 @@ with st.sidebar:
 # QUANTIDADE POR MODELO
 # =========================================================
 st.subheader("Quantidade por modelo")
-st.caption("Digite a quantidade planejada por modelo. A carga usa TEMPO INDIVIDUAL da coluna G.")
 
 qty_map: Dict[str, float] = {}
 sel_C = sel_modelo_c if isinstance(sel_modelo_c, list) else []
