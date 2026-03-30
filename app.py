@@ -93,6 +93,23 @@ def _find_col(df: pd.DataFrame, contains: str) -> Optional[str]:
     return candidates[0]
 
 
+def _find_col_exact_or_contains(df: pd.DataFrame, target: str) -> Optional[str]:
+    if df is None or df.empty:
+        return None
+
+    target_norm = str(target).strip().lower()
+
+    for c in df.columns:
+        if str(c).strip().lower() == target_norm:
+            return c
+
+    for c in df.columns:
+        if target_norm in str(c).strip().lower():
+            return c
+
+    return None
+
+
 def _apply_filters(df: pd.DataFrame, filters: Dict[str, List]) -> pd.DataFrame:
     out = df.copy()
     for col, selected in filters.items():
@@ -105,10 +122,10 @@ def _apply_filters(df: pd.DataFrame, filters: Dict[str, List]) -> pd.DataFrame:
 
 def _util_color(util_pct: float) -> str:
     if util_pct >= 100:
-        return "#D62728"
+        return "#D62728"  # vermelho
     if util_pct >= 85:
-        return "#FF7F0E"
-    return "#2CA02C"
+        return "#FF7F0E"  # laranja
+    return "#2CA02C"      # verde
 
 
 def _load_logo_image() -> Optional[Image.Image]:
@@ -119,6 +136,7 @@ def _load_logo_image() -> Optional[Image.Image]:
                 return Image.open(fn)
             except Exception:
                 pass
+
     for fn in os.listdir("."):
         if fn.lower().startswith("logo") and os.path.isfile(fn):
             try:
@@ -132,6 +150,13 @@ def _fmt_br(x, casas=2):
     if pd.isna(x):
         return "-"
     return f"{x:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _read_sheet_safe(xlsx_path: str, sheet_name: str) -> pd.DataFrame:
+    try:
+        return pd.read_excel(xlsx_path, sheet_name=sheet_name, engine="openpyxl")
+    except Exception:
+        return pd.DataFrame()
 
 
 # =========================================================
@@ -162,6 +187,9 @@ if df0.empty:
     st.warning("O arquivo está vazio.")
     st.stop()
 
+# Aba de indiretos
+df_ind = _read_sheet_safe(ARQUIVO_EXCEL, "INDIRETOS")
+
 
 # =========================================================
 # MAPEAR COLUNAS
@@ -188,6 +216,32 @@ if col_C is None:
 if col_F is None:
     st.error("Não encontrei a coluna F (Descrição CR).")
     st.stop()
+
+
+# =========================================================
+# ABA INDIRETOS (MOI FIXA)
+# =========================================================
+col_ind_setor = None
+col_ind_moi = None
+moi_total_fixo = 0.0
+tabela_indiretos = pd.DataFrame()
+
+if not df_ind.empty:
+    col_ind_setor = _find_col_exact_or_contains(df_ind, "SETOR")
+    col_ind_moi = _find_col_exact_or_contains(df_ind, "MOI")
+
+    if col_ind_setor is not None and col_ind_moi is not None:
+        tabela_indiretos = df_ind[[col_ind_setor, col_ind_moi]].copy()
+        tabela_indiretos.columns = ["SETOR", "MOI"]
+
+        tabela_indiretos["SETOR"] = tabela_indiretos["SETOR"].astype(str).str.strip()
+        tabela_indiretos["MOI"] = tabela_indiretos["MOI"].apply(_to_float).fillna(0)
+
+        tabela_indiretos = tabela_indiretos[
+            tabela_indiretos["SETOR"].str.upper() != "TOTAL"
+        ].copy()
+
+        moi_total_fixo = float(tabela_indiretos["MOI"].sum())
 
 
 # =========================================================
@@ -425,16 +479,28 @@ with aba1:
 
     st.dataframe(detail, use_container_width=True, height=420)
 
+    csv_maquina = detail.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "Baixar dados carga máquina (CSV)",
+        data=csv_maquina,
+        file_name="carga_maquina_filtrada.csv",
+        mime="text/csv",
+        key="download_maquina"
+    )
+
 
 # =========================================================
 # ABA 2 - MÃO DE OBRA
 # =========================================================
 with aba2:
     st.subheader("Simulação de Cenário - Mão de Obra")
-    st.caption("Base: tempo individual da coluna G. Regra: 1 pessoa = 500 minutos por dia. Filtro principal: Descrição CR da coluna F.")
+    st.caption(
+        "MOD = calculada pelo tempo individual da coluna G × quantidade planejada. "
+        "MOI = mão de obra indireta fixa da aba INDIRETOS, independente da produção."
+    )
 
     dias_mo = st.number_input(
-        "Dias para cálculo da mão de obra",
+        "Dias para cálculo da mão de obra direta",
         min_value=1.0,
         max_value=31.0,
         value=float(dias_uteis),
@@ -444,6 +510,7 @@ with aba2:
 
     minutos_disponiveis_por_pessoa = MINUTOS_POR_PESSOA_DIA * float(dias_mo)
 
+    # MOD
     df_mo = df.copy()
     df_mo["_DESC_CR_"] = _col_series(df_mo, col_F).astype(str).str.strip()
 
@@ -454,57 +521,133 @@ with aba2:
     ).reset_index()
 
     agg_mo = agg_mo.sort_values("minutos_totais", ascending=False)
-    agg_mo["pessoas_necessarias"] = np.where(
+
+    agg_mo["mod_pessoas"] = np.where(
         minutos_disponiveis_por_pessoa > 0,
         agg_mo["minutos_totais"] / minutos_disponiveis_por_pessoa,
         np.nan
     )
-    agg_mo["pessoas_arredondadas"] = np.ceil(agg_mo["pessoas_necessarias"].fillna(0)).astype(int)
+    agg_mo["mod_pessoas_arred"] = np.ceil(agg_mo["mod_pessoas"].fillna(0)).astype(int)
 
-    total_min_mo = float(agg_mo["minutos_totais"].sum())
-    total_pessoas = float(agg_mo["pessoas_necessarias"].sum())
-    total_pessoas_arr = int(np.ceil(total_pessoas)) if np.isfinite(total_pessoas) else 0
+    total_min_mod = float(agg_mo["minutos_totais"].sum())
+    total_mod = float(agg_mo["mod_pessoas"].sum())
+    total_mod_arred = int(np.ceil(total_mod)) if np.isfinite(total_mod) else 0
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Minutos totais", _fmt_br(total_min_mo))
-    m2.metric("Minutos por pessoa no período", _fmt_br(minutos_disponiveis_por_pessoa))
-    m3.metric("Pessoas necessárias", _fmt_br(total_pessoas, 2))
-    m4.metric("Pessoas arredondadas", f"{total_pessoas_arr}")
+    # MOI fixa
+    total_moi = float(moi_total_fixo)
 
-    st.divider()
+    # Total geral
+    total_geral = total_mod + total_moi
+    total_geral_arred = int(total_mod_arred + total_moi)
 
-    graf_mo = alt.Chart(agg_mo).mark_bar().encode(
-        x=alt.X("pessoas_necessarias:Q", title="Pessoas necessárias"),
-        y=alt.Y("_DESC_CR_:N", sort="-x", title="Descrição CR"),
-        tooltip=[
-            alt.Tooltip("_DESC_CR_:N", title="Descrição CR"),
-            alt.Tooltip("minutos_totais:Q", title="Minutos totais", format=",.2f"),
-            alt.Tooltip("pessoas_necessarias:Q", title="Pessoas necessárias", format=",.2f"),
-            alt.Tooltip("pessoas_arredondadas:Q", title="Pessoas arredondadas"),
-        ],
-    ).properties(height=min(700, 28 * max(8, len(agg_mo))))
-
-    st.altair_chart(graf_mo, use_container_width=True)
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Minutos totais MOD", _fmt_br(total_min_mod))
+    m2.metric("Minutos por pessoa", _fmt_br(minutos_disponiveis_por_pessoa))
+    m3.metric("MOD necessária", _fmt_br(total_mod, 2))
+    m4.metric("MOI fixa", _fmt_br(total_moi, 0))
+    m5.metric("Total MOD + MOI", _fmt_br(total_geral, 2))
 
     st.divider()
 
-    st.subheader("Tabela de mão de obra por Descrição CR")
-    tabela_mo = agg_mo.rename(columns={
+    c1, c2 = st.columns([1.2, 0.8], gap="large")
+
+    with c1:
+        st.markdown("### MOD por Descrição CR")
+
+        graf_mo = alt.Chart(agg_mo).mark_bar().encode(
+            x=alt.X("mod_pessoas:Q", title="Pessoas necessárias (MOD)"),
+            y=alt.Y("_DESC_CR_:N", sort="-x", title="Descrição CR"),
+            tooltip=[
+                alt.Tooltip("_DESC_CR_:N", title="Descrição CR"),
+                alt.Tooltip("minutos_totais:Q", title="Minutos totais", format=",.2f"),
+                alt.Tooltip("mod_pessoas:Q", title="MOD necessária", format=",.2f"),
+                alt.Tooltip("mod_pessoas_arred:Q", title="MOD arredondada"),
+            ],
+        ).properties(height=min(700, 28 * max(8, len(agg_mo))))
+
+        st.altair_chart(graf_mo, use_container_width=True)
+
+    with c2:
+        st.markdown("### Resumo de Pessoas")
+        resumo_pessoas = pd.DataFrame({
+            "Tipo": ["MOD calculada", "MOI fixa", "Total"],
+            "Pessoas": [total_mod, total_moi, total_geral]
+        })
+
+        graf_resumo = alt.Chart(resumo_pessoas).mark_bar().encode(
+            x=alt.X("Pessoas:Q", title="Pessoas"),
+            y=alt.Y("Tipo:N", title=""),
+            tooltip=[
+                alt.Tooltip("Tipo:N", title="Tipo"),
+                alt.Tooltip("Pessoas:Q", title="Pessoas", format=",.2f"),
+            ],
+        ).properties(height=220)
+
+        st.altair_chart(graf_resumo, use_container_width=True)
+
+    st.divider()
+
+    st.markdown("### Tabela MOD por Descrição CR")
+    tabela_mod = agg_mo.rename(columns={
         "_DESC_CR_": "DESCRIÇÃO CR",
         "minutos_totais": "MINUTOS_TOTAIS",
         "modelos": "MODELOS",
         "linhas": "LINHAS",
-        "pessoas_necessarias": "PESSOAS_NECESSARIAS",
-        "pessoas_arredondadas": "PESSOAS_ARREDONDADAS",
+        "mod_pessoas": "MOD_PESSOAS",
+        "mod_pessoas_arred": "MOD_PESSOAS_ARRED",
     }).copy()
 
-    st.dataframe(tabela_mo, use_container_width=True, height=450)
+    st.dataframe(tabela_mod, use_container_width=True, height=420)
 
-    csv_mo = tabela_mo.to_csv(index=False).encode("utf-8-sig")
+    st.markdown("### Tabela MOI fixa (aba INDIRETOS)")
+    if tabela_indiretos.empty:
+        st.warning("Não encontrei dados válidos na aba INDIRETOS com colunas SETOR e MOI.")
+    else:
+        st.dataframe(tabela_indiretos, use_container_width=True, height=320)
+
+    tabela_resumo_final = pd.DataFrame({
+        "INDICADOR": [
+            "MINUTOS_TOTAIS_MOD",
+            "MOD_NECESSARIA",
+            "MOD_ARREDONDADA",
+            "MOI_FIXA",
+            "TOTAL_MOD_MOI",
+            "TOTAL_MOD_MOI_ARRED"
+        ],
+        "VALOR": [
+            total_min_mod,
+            total_mod,
+            total_mod_arred,
+            total_moi,
+            total_geral,
+            total_geral_arred
+        ]
+    })
+
+    csv_mod = tabela_mod.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
-        "Baixar mão de obra (CSV)",
-        data=csv_mo,
-        file_name="mao_de_obra_por_descricao_cr.csv",
+        "Baixar MOD por Descrição CR (CSV)",
+        data=csv_mod,
+        file_name="mao_de_obra_direta_por_cr.csv",
         mime="text/csv",
-        key="download_mo"
+        key="download_mod"
+    )
+
+    if not tabela_indiretos.empty:
+        csv_moi = tabela_indiretos.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "Baixar MOI fixa (CSV)",
+            data=csv_moi,
+            file_name="mao_de_obra_indireta_fixa.csv",
+            mime="text/csv",
+            key="download_moi"
+        )
+
+    csv_resumo = tabela_resumo_final.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "Baixar resumo total MOD + MOI (CSV)",
+        data=csv_resumo,
+        file_name="resumo_mao_de_obra_total.csv",
+        mime="text/csv",
+        key="download_resumo_mo"
     )
