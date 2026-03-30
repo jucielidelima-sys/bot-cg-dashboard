@@ -1,252 +1,259 @@
-import os
-import re
-from typing import Optional, List, Dict
-
-import numpy as np
-import pandas as pd
-import streamlit as st
-from PIL import Image
-import altair as alt
-
-
-# =========================================================
-# CONFIG FIXO
-# =========================================================
-ARQUIVO_EXCEL = "CG BOT PY.xlsx"
-MINUTOS_POR_PESSOA_DIA = 500.0
-
-
-# =========================================================
-# CONFIG STREAMLIT
-# =========================================================
-st.set_page_config(
-    page_title="Dashboard de Carga Máquina e Mão de Obra",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-
-# =========================================================
-# CSS FINAL (SEM LINHA BRANCA + INDUSTRIAL)
-# =========================================================
 st.markdown("""
 <style>
-/* REMOVE ESPAÇO BRANCO SUPERIOR */
-html, body, [class*="css"]  {
-    margin: 0 !important;
-    padding: 0 !important;
-}
+    html, body, [class*="css"]  {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
 
-/* REMOVE HEADER DO STREAMLIT */
-header[data-testid="stHeader"] {
-    background: transparent !important;
-    height: 0px !important;
-}
-header[data-testid="stHeader"] > div {
-    height: 0px !important;
-}
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        height: 0px !important;
+    }
 
-/* REMOVE ESPAÇO DO CONTAINER */
-.block-container {
-    padding-top: 0rem !important;
-    padding-bottom: 1rem;
-    max-width: 96%;
-}
+    header[data-testid="stHeader"] > div {
+        height: 0px !important;
+    }
 
-/* REMOVE GAP EXTRA */
-div[data-testid="stAppViewContainer"] > .main {
-    padding-top: 0rem !important;
-}
-section.main > div {
-    padding-top: 0rem !important;
-}
+    .block-container {
+        padding-top: 0rem !important;
+        padding-bottom: 1rem;
+        max-width: 96%;
+    }
 
-/* BACKGROUND INDUSTRIAL */
-.stApp {
-    background:
-        radial-gradient(circle at top left, rgba(45,156,255,0.10), transparent 26%),
-        radial-gradient(circle at top right, rgba(139,92,246,0.10), transparent 24%),
-        linear-gradient(180deg, #0a0d12 0%, #0f141d 50%, #131925 100%);
-    color: #E8EDF7;
-}
+    div[data-testid="stAppViewContainer"] > .main {
+        padding-top: 0rem !important;
+    }
 
-/* HEADER METÁLICO */
-.metal-header {
-    border-radius: 20px;
-    padding: 18px 24px;
-    margin-top: 0rem;
-    margin-bottom: 18px;
-    background:
-        linear-gradient(135deg, #616975, #2e3540, #8b949f, #232a34);
-    box-shadow:
-        0 8px 25px rgba(0,0,0,0.4),
-        inset 0 1px 0 rgba(255,255,255,0.2);
-}
+    section.main > div {
+        padding-top: 0rem !important;
+    }
 
-.metal-title {
-    font-size: 1.9rem;
-    font-weight: 900;
-    color: white;
-}
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(45,156,255,0.10), transparent 26%),
+            radial-gradient(circle at top right, rgba(139,92,246,0.10), transparent 24%),
+            linear-gradient(180deg, #0a0d12 0%, #0f141d 50%, #131925 100%);
+        color: #E8EDF7;
+    }
 
-.metal-subtitle {
-    font-size: 0.9rem;
-    color: #d6dde8;
-}
+    .metal-header {
+        position: relative;
+        overflow: hidden;
+        border-radius: 22px;
+        padding: 18px 24px;
+        margin-top: 0rem !important;
+        margin-bottom: 18px;
+        background:
+            linear-gradient(135deg, #616975 0%, #2e3540 18%, #8b949f 34%, #232a34 48%, #9aa4b0 64%, #2b323d 82%, #5f6874 100%);
+        border: 1px solid rgba(255,255,255,0.20);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.28),
+            inset 0 -1px 0 rgba(0,0,0,0.25),
+            0 10px 30px rgba(0,0,0,0.28);
+    }
 
-/* CARDS */
-.tesla-card {
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 12px;
-    background: rgba(255,255,255,0.05);
-    box-shadow: 0 0 15px rgba(45,156,255,0.1);
-}
+    .metal-header:before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.14) 30%, transparent 60%),
+            repeating-linear-gradient(
+                115deg,
+                rgba(255,255,255,0.03) 0px,
+                rgba(255,255,255,0.03) 2px,
+                transparent 2px,
+                transparent 10px
+            );
+        mix-blend-mode: screen;
+        pointer-events: none;
+    }
 
-.card-blue { border-left: 5px solid #2D9CFF; }
-.card-green { border-left: 5px solid #14C38E; }
-.card-orange { border-left: 5px solid #FFB020; }
-.card-red { border-left: 5px solid #FF5A5F; }
-.card-purple { border-left: 5px solid #8B5CF6; }
+    .metal-title {
+        font-size: 2rem;
+        font-weight: 900;
+        color: #F8FAFC;
+        text-shadow:
+            0 1px 0 rgba(0,0,0,0.35),
+            0 0 10px rgba(255,255,255,0.14);
+        margin: 0;
+    }
 
-.card-title {
-    font-size: 0.8rem;
-    color: #9fb0c7;
-    font-weight: bold;
-}
+    .metal-subtitle {
+        margin-top: 6px;
+        color: #E6ECF5;
+        font-size: 0.93rem;
+        font-weight: 500;
+        letter-spacing: 0.3px;
+    }
 
-.card-value {
-    font-size: 1.8rem;
-    font-weight: 900;
-}
+    section[data-testid="stSidebar"] {
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)),
+            linear-gradient(180deg, #0f131b 0%, #171d29 100%);
+        border-right: 1px solid rgba(255,255,255,0.08);
+    }
 
+    div[data-testid="stMetric"] {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 18px;
+        padding: 14px 16px;
+        box-shadow:
+            0 4px 16px rgba(0,0,0,0.18),
+            inset 0 1px 0 rgba(255,255,255,0.03);
+    }
+
+    div[data-testid="stMetricLabel"] {
+        color: #AEB7C6 !important;
+        font-size: 0.9rem !important;
+        font-weight: 700 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+    }
+
+    div[data-testid="stMetricValue"] {
+        color: #FFFFFF !important;
+        font-weight: 900 !important;
+        text-shadow: 0 0 12px rgba(45,156,255,0.10);
+    }
+
+    .tesla-card {
+        border-radius: 20px;
+        padding: 18px 18px 14px 18px;
+        margin-bottom: 14px;
+        box-shadow:
+            0 8px 24px rgba(0,0,0,0.24),
+            0 0 18px rgba(45,156,255,0.06);
+        border: 1px solid rgba(255,255,255,0.08);
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+        backdrop-filter: blur(8px);
+    }
+
+    .card-green { border-left: 6px solid #14C38E; box-shadow: 0 0 18px rgba(20,195,142,0.12), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-blue { border-left: 6px solid #2D9CFF; box-shadow: 0 0 18px rgba(45,156,255,0.14), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-orange { border-left: 6px solid #FFB020; box-shadow: 0 0 18px rgba(255,176,32,0.12), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-red { border-left: 6px solid #FF5A5F; box-shadow: 0 0 18px rgba(255,90,95,0.14), 0 8px 24px rgba(0,0,0,0.24); }
+    .card-purple { border-left: 6px solid #8B5CF6; box-shadow: 0 0 18px rgba(139,92,246,0.14), 0 8px 24px rgba(0,0,0,0.24); }
+
+    .card-title {
+        color: #B6C0CF;
+        font-size: 0.82rem;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 800;
+    }
+
+    .card-value {
+        color: #FFFFFF;
+        font-size: 2rem;
+        font-weight: 900;
+        line-height: 1.05;
+        text-shadow: 0 0 12px rgba(255,255,255,0.06);
+    }
+
+    .card-sub {
+        color: #93A0B5;
+        font-size: 0.82rem;
+        margin-top: 8px;
+    }
+
+    .section-panel {
+        border-radius: 20px;
+        padding: 18px;
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025));
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow:
+            0 8px 24px rgba(0,0,0,0.20),
+            inset 0 1px 0 rgba(255,255,255,0.04);
+        margin-bottom: 16px;
+    }
+
+    .small-note {
+        color: #94A3B8;
+        font-size: 0.82rem;
+    }
+
+    .stDataFrame, .stTable {
+        background: rgba(255,255,255,0.03);
+        border-radius: 16px;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 12px;
+        background: rgba(255,255,255,0.04);
+        color: #DCE3ED;
+        padding: 10px 18px;
+        border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(90deg, #2D9CFF, #8B5CF6) !important;
+        color: white !important;
+        box-shadow: 0 0 18px rgba(45,156,255,0.16);
+    }
+
+    .gargalo-panel {
+        border-radius: 18px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-top {
+        border-left: 6px solid #FF5A5F;
+        box-shadow: 0 0 16px rgba(255,90,95,0.12), 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-mid {
+        border-left: 6px solid #FFB020;
+        box-shadow: 0 0 16px rgba(255,176,32,0.10), 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-ok {
+        border-left: 6px solid #14C38E;
+        box-shadow: 0 0 16px rgba(20,195,142,0.10), 0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .gargalo-rank {
+        font-size: 0.78rem;
+        color: #9FB0C7;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 800;
+    }
+
+    .gargalo-name {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #F8FAFC;
+        margin-top: 2px;
+    }
+
+    .gargalo-kpi {
+        font-size: 1.35rem;
+        font-weight: 900;
+        color: #FFFFFF;
+        margin-top: 4px;
+    }
+
+    .gargalo-sub {
+        font-size: 0.8rem;
+        color: #9BA8BC;
+        margin-top: 4px;
+    }
+
+    hr {
+        border-color: rgba(255,255,255,0.08) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
-
-
-# =========================================================
-# HELPERS
-# =========================================================
-def _to_float(x):
-    if pd.isna(x):
-        return np.nan
-    try:
-        return float(str(x).replace(",", "."))
-    except:
-        return np.nan
-
-
-def _col_by_index(df, idx):
-    try:
-        return df.columns[idx]
-    except:
-        return None
-
-
-def _fmt(x):
-    return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-# =========================================================
-# HEADER
-# =========================================================
-col_logo, col_head = st.columns([0.15, 0.85])
-
-with col_logo:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=120)
-
-with col_head:
-    st.markdown("""
-    <div class="metal-header">
-        <div class="metal-title">Dashboard de Carga Máquina e Mão de Obra</div>
-        <div class="metal-subtitle">Sala de controle industrial • Simulação de cenários</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# =========================================================
-# LOAD DATA
-# =========================================================
-df = pd.read_excel(ARQUIVO_EXCEL)
-
-col_C = _col_by_index(df, 2)
-col_F = _col_by_index(df, 5)
-col_G = _col_by_index(df, 6)
-
-df["TEMPO"] = df[col_G].apply(_to_float)
-
-# =========================================================
-# SIDEBAR
-# =========================================================
-with st.sidebar:
-    st.header("Filtros")
-
-    modelos = st.multiselect("Modelo", df[col_C].dropna().unique())
-    cr = st.multiselect("CR", df[col_F].dropna().unique())
-
-# =========================================================
-# FILTRO
-# =========================================================
-if modelos:
-    df = df[df[col_C].isin(modelos)]
-
-if cr:
-    df = df[df[col_F].isin(cr)]
-
-# =========================================================
-# QUANTIDADE
-# =========================================================
-st.subheader("Quantidade por modelo")
-
-qty_map = {}
-for m in modelos:
-    qty_map[m] = st.number_input(f"{m}", 0, 100000, 100)
-
-df["QTD"] = df[col_C].map(qty_map).fillna(0)
-df["MIN"] = df["TEMPO"] * df["QTD"]
-df["HORAS"] = df["MIN"] / 60
-
-# =========================================================
-# KPIS
-# =========================================================
-total_horas = df["HORAS"].sum()
-
-c1, c2 = st.columns(2)
-c1.metric("Horas totais", _fmt(total_horas))
-c2.metric("Registros", len(df))
-
-
-# =========================================================
-# GRÁFICO NEON
-# =========================================================
-st.subheader("Carga por CR")
-
-agg = df.groupby(col_F)["HORAS"].sum().reset_index()
-
-base = alt.Chart(agg).encode(
-    x="HORAS",
-    y=alt.Y(col_F, sort="-x")
-)
-
-glow = base.mark_bar(opacity=0.2, size=30, color="#2D9CFF")
-bars = base.mark_bar(size=18, color="#2D9CFF")
-
-st.altair_chart(glow + bars, use_container_width=True)
-
-
-# =========================================================
-# RANKING GARGALOS
-# =========================================================
-st.subheader("Ranking de Gargalos")
-
-top = agg.sort_values("HORAS", ascending=False).head(5)
-
-for i, row in top.iterrows():
-    st.markdown(f"""
-    <div class="tesla-card card-red">
-        <div class="card-title">#{i+1} GARGALO</div>
-        <div class="card-value">{row[col_F]}</div>
-        <div class="card-title">{_fmt(row['HORAS'])} h</div>
-    </div>
-    """, unsafe_allow_html=True)
