@@ -22,12 +22,12 @@ MINUTOS_POR_PESSOA_DIA = 500.0
 st.set_page_config(
     page_title="Dashboard MES Industrial",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",  # menu lateral recolhível / inicia recolhido
 )
 
 
 # =========================================================
-# TEMA GLOBAL DOS GRÁFICOS (FUNDO ESCURO)
+# TEMA GLOBAL DOS GRÁFICOS
 # =========================================================
 def tema_dark_industrial():
     return {
@@ -62,7 +62,7 @@ alt.themes.enable("dark_industrial_mes")
 
 
 # =========================================================
-# CSS - MES / TESLA / GLASS / SALA DE CONTROLE
+# CSS
 # =========================================================
 st.markdown("""
 <style>
@@ -218,6 +218,13 @@ section[data-testid="stSidebar"] {
     font-size: 0.82rem;
 }
 
+.kpi-grid-title {
+    color: #DDE6F3;
+    font-size: 1rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+
 .stTabs [data-baseweb="tab-list"] {
     gap: 10px;
 }
@@ -234,7 +241,6 @@ section[data-testid="stSidebar"] {
     box-shadow: 0 0 18px rgba(45,156,255,0.16);
 }
 
-/* TABELAS BRANCAS */
 .stDataFrame, .stTable {
     background: #FFFFFF !important;
     border-radius: 12px;
@@ -243,7 +249,6 @@ section[data-testid="stSidebar"] {
     background: #FFFFFF !important;
 }
 
-/* Metrics */
 div[data-testid="stMetric"] {
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.08);
@@ -511,7 +516,7 @@ with col_head:
     st.markdown("""
     <div class="metal-header">
         <div class="metal-title">Dashboard MES Industrial</div>
-        <div class="metal-subtitle">Sala de controle operacional • Glassmorphism Tesla • Simulação de cenários</div>
+        <div class="metal-subtitle">Tela executiva da fábrica • Sala de controle operacional • Simulação de cenários</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -539,8 +544,8 @@ df_ind = _read_sheet_safe(ARQUIVO_EXCEL, "INDIRETOS")
 # =========================================================
 # MAPEAR COLUNAS
 # =========================================================
-col_C = _col_by_index(df0, 2)    # Modelo
-col_F = _col_by_index(df0, 5)    # Descrição CR
+col_C = _col_by_index(df0, 2)
+col_F = _col_by_index(df0, 5)
 col_J = _col_by_index(df0, 9)
 col_R = _col_by_index(df0, 17)
 
@@ -767,19 +772,222 @@ else:
 cap_horas_programadas = float(n_cr_total) * float(horas_periodo)
 cap_horas_efetivas = cap_horas_programadas * float(oee) * float(eff_mo)
 
+# executivos
+total_horas = float(df["HORAS_TRABALHADAS"].sum())
+util_pct = (total_horas / cap_horas_efetivas * 100.0) if cap_horas_efetivas > 0 else np.nan
+total_mod_min = float(df["CARGA_MIN"].sum())
+total_mod_pessoas = (total_mod_min / (MINUTOS_POR_PESSOA_DIA * float(dias_uteis))) if dias_uteis > 0 else np.nan
+total_pessoas_fabrica = float(total_mod_pessoas + moi_total_fixo) if not np.isnan(total_mod_pessoas) else float(moi_total_fixo)
+
+# base agrupada executiva
+tmp_exec = df.copy()
+tmp_exec["_GRUPO_EXEC_"] = _col_series(df, col_F).astype(str).fillna("(vazio)")
+agg_exec = tmp_exec.groupby("_GRUPO_EXEC_", dropna=False).agg(
+    horas=("HORAS_TRABALHADAS", "sum"),
+    n_cr=("_CR_CLEAN", pd.Series.nunique),
+    qtd_modelos=(col_C, pd.Series.nunique),
+).reset_index()
+agg_exec["cap_prog_h"] = agg_exec["n_cr"].astype(float) * float(horas_periodo)
+agg_exec["cap_efet_h"] = agg_exec["cap_prog_h"] * float(oee) * float(eff_mo)
+agg_exec["util_pct"] = np.where(agg_exec["cap_efet_h"] > 0, agg_exec["horas"] / agg_exec["cap_efet_h"] * 100.0, np.nan)
+agg_exec["horas_proj"] = agg_exec["horas"] * fator_previsao
+agg_exec["util_proj_pct"] = np.where(agg_exec["cap_efet_h"] > 0, agg_exec["horas_proj"] / agg_exec["cap_efet_h"] * 100.0, np.nan)
+agg_exec["score_ia"] = agg_exec["util_proj_pct"].fillna(0) + (agg_exec["qtd_modelos"].fillna(0) * 2.0)
+agg_exec = agg_exec.sort_values("horas", ascending=False)
+agg_exec_pred = agg_exec.sort_values(["score_ia", "util_proj_pct"], ascending=False)
+
+gargalo_atual = str(agg_exec.iloc[0]["_GRUPO_EXEC_"]) if not agg_exec.empty else "-"
+gargalo_atual_util = float(agg_exec.iloc[0]["util_pct"]) if (not agg_exec.empty and pd.notna(agg_exec.iloc[0]["util_pct"])) else np.nan
+gargalo_previsto = str(agg_exec_pred.iloc[0]["_GRUPO_EXEC_"]) if not agg_exec_pred.empty else "-"
+gargalo_previsto_util = float(agg_exec_pred.iloc[0]["util_proj_pct"]) if (not agg_exec_pred.empty and pd.notna(agg_exec_pred.iloc[0]["util_proj_pct"])) else np.nan
+
 
 # =========================================================
 # ABAS
 # =========================================================
-aba1, aba2, aba3 = st.tabs(["Carga Máquina", "Mão de Obra", "Indiretos"])
+aba0, aba1, aba2, aba3 = st.tabs(["Resumo Executivo", "Carga Máquina", "Mão de Obra", "Indiretos"])
+
+
+# =========================================================
+# ABA 0 - RESUMO EXECUTIVO
+# =========================================================
+with aba0:
+    st.subheader("Tela Inicial Executiva")
+    st.caption("Visão geral da fábrica para acompanhamento rápido de capacidade, gargalos e mão de obra.")
+
+    r1, r2, r3, r4 = st.columns(4)
+    with r1:
+        st.markdown(_card_html(
+            "Carga Total",
+            f"{_fmt_br(total_horas)} h",
+            "Horas trabalhadas do cenário filtrado",
+            "card-blue"
+        ), unsafe_allow_html=True)
+    with r2:
+        st.markdown(_card_html(
+            "Capacidade Efetiva",
+            f"{_fmt_br(cap_horas_efetivas)} h",
+            "Capacidade com OEE e eficiência MO",
+            "card-green"
+        ), unsafe_allow_html=True)
+    with r3:
+        st.markdown(_card_html(
+            "Utilização Geral",
+            f"{_fmt_br(util_pct,1)}%" if not np.isnan(util_pct) else "-",
+            "Carga ÷ capacidade efetiva",
+            "card-orange" if (not np.isnan(util_pct) and util_pct >= 85) else "card-green"
+        ), unsafe_allow_html=True)
+    with r4:
+        st.markdown(_card_html(
+            "Pessoas Totais",
+            _fmt_br(total_pessoas_fabrica, 2),
+            "MOD estimada + MOI fixa",
+            "card-purple"
+        ), unsafe_allow_html=True)
+
+    r5, r6, r7, r8 = st.columns(4)
+    with r5:
+        st.markdown(_card_html(
+            "MOD Estimada",
+            _fmt_br(total_mod_pessoas, 2) if not np.isnan(total_mod_pessoas) else "-",
+            f"Base: {int(MINUTOS_POR_PESSOA_DIA)} min/pessoa/dia",
+            "card-blue"
+        ), unsafe_allow_html=True)
+    with r6:
+        st.markdown(_card_html(
+            "MOI Fixa",
+            _fmt_br(moi_total_fixo, 0),
+            "Lida da aba INDIRETOS",
+            "card-purple"
+        ), unsafe_allow_html=True)
+    with r7:
+        st.markdown(_card_html(
+            "Gargalo Atual",
+            gargalo_atual,
+            f"Utilização: {_fmt_br(gargalo_atual_util,1)}%" if not np.isnan(gargalo_atual_util) else "Sem dados",
+            "card-red" if (not np.isnan(gargalo_atual_util) and gargalo_atual_util >= 100) else "card-orange"
+        ), unsafe_allow_html=True)
+    with r8:
+        st.markdown(_card_html(
+            "Gargalo Previsto",
+            gargalo_previsto,
+            f"Projeção: {_fmt_br(gargalo_previsto_util,1)}%" if not np.isnan(gargalo_previsto_util) else "Sem dados",
+            "card-red" if (not np.isnan(gargalo_previsto_util) and gargalo_previsto_util >= 100) else "card-orange"
+        ), unsafe_allow_html=True)
+
+    c1, c2 = st.columns([1.1, 0.9], gap="large")
+
+    with c1:
+        st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
+        st.subheader("Top 10 cargas por Descrição CR")
+
+        top_exec = agg_exec.head(10).copy()
+        top_exec["cor"] = top_exec["util_pct"].apply(lambda x: _util_color(float(x)) if pd.notna(x) else "#64748B")
+
+        base_exec = alt.Chart(top_exec).encode(
+            x=alt.X("horas:Q", title="Horas"),
+            y=alt.Y("_GRUPO_EXEC_:N", sort="-x", title="")
+        )
+
+        glow_exec = base_exec.mark_bar(
+            cornerRadiusTopRight=7,
+            cornerRadiusBottomRight=7,
+            opacity=0.22,
+            size=28
+        ).encode(
+            color=alt.Color("cor:N", scale=None, legend=None)
+        )
+
+        bars_exec = base_exec.mark_bar(
+            cornerRadiusTopRight=7,
+            cornerRadiusBottomRight=7,
+            size=16
+        ).encode(
+            color=alt.Color("cor:N", scale=None, legend=None),
+            tooltip=[
+                alt.Tooltip("_GRUPO_EXEC_:N", title="Descrição CR"),
+                alt.Tooltip("horas:Q", title="Horas", format=",.2f"),
+                alt.Tooltip("util_pct:Q", title="Utilização", format=",.1f"),
+            ],
+        ).properties(height=360)
+
+        st.altair_chart(glow_exec + bars_exec, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c2:
+        st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
+        st.subheader("Ranking Executivo de Gargalos")
+
+        rank_exec = agg_exec.sort_values("util_pct", ascending=False).copy()
+        rank_exec["meta"] = rank_exec.apply(
+            lambda r: f"{_fmt_br(float(r['util_pct']),1)}% • {_fmt_br(float(r['horas']),2)} h",
+            axis=1
+        )
+        _render_rank_bars(rank_exec, "_GRUPO_EXEC_", "util_pct", "meta", max_items=8)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    c3, c4 = st.columns([1.0, 1.0], gap="large")
+
+    with c3:
+        st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
+        st.subheader("Painel Executivo de Capacidade")
+
+        painel_exec = pd.DataFrame({
+            "Indicador": ["Carga Total", "Cap. Programada", "Cap. Efetiva"],
+            "Valor": [total_horas, cap_horas_programadas, cap_horas_efetivas],
+            "Cor": ["#2D9CFF", "#8B5CF6", "#14C38E"]
+        })
+
+        chart_painel = alt.Chart(painel_exec).mark_bar(cornerRadiusEnd=8).encode(
+            x=alt.X("Valor:Q", title="Horas"),
+            y=alt.Y("Indicador:N", title=""),
+            color=alt.Color("Cor:N", scale=None, legend=None),
+            tooltip=[
+                alt.Tooltip("Indicador:N", title="Indicador"),
+                alt.Tooltip("Valor:Q", title="Horas", format=",.2f")
+            ],
+        ).properties(height=240)
+
+        st.altair_chart(chart_painel, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
+        st.subheader("Previsão Executiva")
+
+        pred_exec = agg_exec_pred.head(5)[["_GRUPO_EXEC_", "util_proj_pct"]].copy()
+        pred_exec["Cor"] = pred_exec["util_proj_pct"].apply(
+            lambda x: "#FF5A5F" if x >= 100 else ("#FFB020" if x >= 85 else "#14C38E")
+        )
+
+        chart_pred_exec = alt.Chart(pred_exec).mark_bar(cornerRadiusEnd=8).encode(
+            x=alt.X("util_proj_pct:Q", title="Utilização projetada (%)"),
+            y=alt.Y("_GRUPO_EXEC_:N", sort="-x", title=""),
+            color=alt.Color("Cor:N", scale=None, legend=None),
+            tooltip=[
+                alt.Tooltip("_GRUPO_EXEC_:N", title="Descrição CR"),
+                alt.Tooltip("util_proj_pct:Q", title="Utilização projetada", format=",.1f"),
+            ],
+        ).properties(height=240)
+
+        st.altair_chart(chart_pred_exec, use_container_width=True)
+        st.markdown(
+            f"""
+            <div class="small-note">
+                Cenário de projeção ativo: <b>+{crescimento_pct}%</b> na demanda.<br>
+                Gargalo previsto principal: <b>{gargalo_previsto}</b>.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =========================================================
 # ABA 1 - CARGA MÁQUINA
 # =========================================================
 with aba1:
-    total_horas = float(df["HORAS_TRABALHADAS"].sum())
-    util_pct = (total_horas / cap_horas_efetivas * 100.0) if cap_horas_efetivas > 0 else np.nan
+    st.subheader("Carga Máquina")
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Horas trabalhadas (carga)", _fmt_br(total_horas))
@@ -933,16 +1141,6 @@ with aba1:
                 f"Carga projetada: {_fmt_br(pred_carga)} h • Cap.: {_fmt_br(pred_cap)} h",
                 "card-blue"
             ), unsafe_allow_html=True)
-
-            st.markdown(
-                """
-                <div class="small-note">
-                    Heurística usada: crescimento linear da carga no cenário escolhido, comparado com a capacidade efetiva atual.
-                    O score também dá peso para agrupamentos com maior variedade de modelos.
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
 
             pred_small = agg_pred[["_GRUPO_", "util_proj_pct"]].copy().head(5)
             pred_small["Cor"] = pred_small["util_proj_pct"].apply(
