@@ -418,14 +418,6 @@ def _util_color(util_pct: float) -> str:
     return "#14C38E"
 
 
-def _rank_class(util_pct: float) -> str:
-    if util_pct > 100:
-        return "rank-red"
-    if util_pct >= 85:
-        return "rank-orange"
-    return "rank-green"
-
-
 def _load_logo_image() -> Optional[Image.Image]:
     candidates = ["logo.png", "logo.jpg", "logo.jpeg", "logo.webp", "logo"]
     for fn in candidates:
@@ -472,13 +464,22 @@ def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, sub
         return
 
     top = df_rank.head(max_items).copy()
-    vmax = float(top[value_col].max()) if float(top[value_col].max()) > 0 else 1.0
+
+    util_obj = top[value_col]
+    if isinstance(util_obj, pd.DataFrame):
+        util_series = util_obj.iloc[:, 0]
+    else:
+        util_series = util_obj
+
+    util_series = pd.to_numeric(util_series, errors="coerce").fillna(0.0)
+    vmax = float(util_series.max()) if float(util_series.max()) > 0 else 1.0
 
     html_parts = []
     for idx, (_, row) in enumerate(top.iterrows(), start=1):
+        valor = float(util_series.loc[row.name]) if row.name in util_series.index else 0.0
         nome = str(row[label_col])
-        valor = float(row[value_col]) if pd.notna(row[value_col]) else 0.0
         pct = max(4.0, min(100.0, (valor / vmax) * 100.0))
+
         if valor > 100:
             cls = "rank-red"
         elif valor >= 85:
@@ -487,6 +488,7 @@ def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, sub
             cls = "rank-green"
         else:
             cls = "rank-gray"
+
         meta = str(row[subtitle_col]) if subtitle_col and subtitle_col in top.columns else _fmt_br(valor, 1)
 
         html_parts.append(f"""
@@ -506,30 +508,60 @@ def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, sub
 
 def _seleciona_gargalo_real(df_agg: pd.DataFrame, col_util: str, col_nome: str):
     """Retorna apenas gargalo real: utilização > 100%.
-    Se não houver, retorna indicador de sem gargalo."""
+    Protegido contra colunas duplicadas.
+    """
     if df_agg.empty or col_util not in df_agg.columns:
         return None, np.nan
 
-    criticos = df_agg[df_agg[col_util] > 100].copy()
+    util_obj = df_agg[col_util]
+
+    if isinstance(util_obj, pd.DataFrame):
+        util_series = util_obj.iloc[:, 0]
+    else:
+        util_series = util_obj
+
+    util_series = pd.to_numeric(util_series, errors="coerce").fillna(0.0)
+
+    criticos = df_agg.copy()
+    criticos["_util_base_"] = util_series
+    criticos = criticos[criticos["_util_base_"] > 100]
+
     if criticos.empty:
         return None, np.nan
 
-    criticos = criticos.sort_values(col_util, ascending=False)
-    return str(criticos.iloc[0][col_nome]), float(criticos.iloc[0][col_util])
+    criticos = criticos.sort_values("_util_base_", ascending=False)
+    return str(criticos.iloc[0][col_nome]), float(criticos.iloc[0]["_util_base_"])
 
 
 def _ranking_gargalos_reais(df_agg: pd.DataFrame, col_util: str) -> pd.DataFrame:
-    """Prioriza gargalos reais (>100), depois atenção (85-100), depois demais."""
+    """Prioriza gargalos reais (>100), depois atenção (85-100), depois demais.
+    Protegido contra colunas duplicadas.
+    """
     df_rank = df_agg.copy()
+
+    util_obj = df_rank[col_util]
+
+    if isinstance(util_obj, pd.DataFrame):
+        util_series = util_obj.iloc[:, 0]
+    else:
+        util_series = util_obj
+
+    util_series = pd.to_numeric(util_series, errors="coerce").fillna(0.0)
+    df_rank["_util_base_"] = util_series
+
     df_rank["_prioridade"] = np.select(
         [
-            df_rank[col_util] > 100,
-            (df_rank[col_util] >= 85) & (df_rank[col_util] <= 100),
+            df_rank["_util_base_"] > 100,
+            (df_rank["_util_base_"] >= 85) & (df_rank["_util_base_"] <= 100),
         ],
         [0, 1],
         default=2
     )
-    return df_rank.sort_values(["_prioridade", col_util], ascending=[True, False]).drop(columns="_prioridade")
+
+    return df_rank.sort_values(
+        ["_prioridade", "_util_base_"],
+        ascending=[True, False]
+    ).drop(columns=["_prioridade", "_util_base_"])
 
 
 # =========================================================
@@ -836,9 +868,6 @@ rank_exec["meta"] = rank_exec.apply(
     axis=1
 )
 
-pred_exec_rank = _ranking_gargalos_reais(agg_exec.rename(columns={"util_proj_pct": "util_pct"}), "util_pct")
-
-
 # =========================================================
 # ABAS
 # =========================================================
@@ -1056,7 +1085,6 @@ with aba1:
 
     agg["horas_proj"] = agg["horas"] * fator_previsao
     agg["util_proj_pct"] = np.where(agg["cap_efet_h"] > 0, agg["horas_proj"] / agg["cap_efet_h"] * 100.0, np.nan)
-    agg["score_ia"] = agg["util_proj_pct"].fillna(0) + (agg["qtd_modelos"].fillna(0) * 2.0)
 
     gargalo_maquina_atual, gargalo_maquina_atual_util = _seleciona_gargalo_real(agg, "util_pct", "_GRUPO_")
     gargalo_maquina_prev, gargalo_maquina_prev_util = _seleciona_gargalo_real(agg, "util_proj_pct", "_GRUPO_")
