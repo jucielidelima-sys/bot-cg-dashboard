@@ -58,7 +58,11 @@ try:
     alt.themes.register("dark_industrial_mes", tema_dark_industrial)
 except Exception:
     pass
-alt.themes.enable("dark_industrial_mes")
+
+try:
+    alt.themes.enable("dark_industrial_mes")
+except Exception:
+    pass
 
 
 # =========================================================
@@ -337,6 +341,10 @@ def _to_float(x):
         return np.nan
 
 
+def _safe_key(texto: str) -> str:
+    return re.sub(r"[^0-9a-zA-Z_]+", "_", str(texto))[:80]
+
+
 def _col_by_index(df: pd.DataFrame, idx0: int) -> Optional[str]:
     if df is None or df.empty:
         return None
@@ -464,19 +472,12 @@ def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, sub
         return
 
     top = df_rank.head(max_items).copy()
-
-    util_obj = top[value_col]
-    if isinstance(util_obj, pd.DataFrame):
-        util_series = util_obj.iloc[:, 0]
-    else:
-        util_series = util_obj
-
-    util_series = pd.to_numeric(util_series, errors="coerce").fillna(0.0)
+    util_series = pd.to_numeric(top[value_col], errors="coerce").fillna(0.0)
     vmax = float(util_series.max()) if float(util_series.max()) > 0 else 1.0
 
     html_parts = []
     for idx, (_, row) in enumerate(top.iterrows(), start=1):
-        valor = float(util_series.loc[row.name]) if row.name in util_series.index else 0.0
+        valor = float(pd.to_numeric(row[value_col], errors="coerce"))
         nome = str(row[label_col])
         pct = max(4.0, min(100.0, (valor / vmax) * 100.0))
 
@@ -507,20 +508,10 @@ def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, sub
 
 
 def _seleciona_gargalo_real(df_agg: pd.DataFrame, col_util: str, col_nome: str):
-    """Retorna apenas gargalo real: utilização > 100%.
-    Protegido contra colunas duplicadas.
-    """
     if df_agg.empty or col_util not in df_agg.columns:
         return None, np.nan
 
-    util_obj = df_agg[col_util]
-
-    if isinstance(util_obj, pd.DataFrame):
-        util_series = util_obj.iloc[:, 0]
-    else:
-        util_series = util_obj
-
-    util_series = pd.to_numeric(util_series, errors="coerce").fillna(0.0)
+    util_series = pd.to_numeric(df_agg[col_util], errors="coerce").fillna(0.0)
 
     criticos = df_agg.copy()
     criticos["_util_base_"] = util_series
@@ -534,19 +525,8 @@ def _seleciona_gargalo_real(df_agg: pd.DataFrame, col_util: str, col_nome: str):
 
 
 def _ranking_gargalos_reais(df_agg: pd.DataFrame, col_util: str) -> pd.DataFrame:
-    """Prioriza gargalos reais (>100), depois atenção (85-100), depois demais.
-    Protegido contra colunas duplicadas.
-    """
     df_rank = df_agg.copy()
-
-    util_obj = df_rank[col_util]
-
-    if isinstance(util_obj, pd.DataFrame):
-        util_series = util_obj.iloc[:, 0]
-    else:
-        util_series = util_obj
-
-    util_series = pd.to_numeric(util_series, errors="coerce").fillna(0.0)
+    util_series = pd.to_numeric(df_rank[col_util], errors="coerce").fillna(0.0)
     df_rank["_util_base_"] = util_series
 
     df_rank["_prioridade"] = np.select(
@@ -631,7 +611,7 @@ if col_F is None:
 
 
 # =========================================================
-# ABA INDIRETOS
+# INDIRETOS
 # =========================================================
 moi_total_fixo = 0.0
 tabela_indiretos = pd.DataFrame()
@@ -651,7 +631,6 @@ if not df_ind.empty:
 
     if len(cols_full) > 0:
         tabela_indiretos_full = df_ind[cols_full].copy()
-
         rename_map = {}
         if col_ind_setor is not None:
             rename_map[col_ind_setor] = "SETOR"
@@ -659,18 +638,14 @@ if not df_ind.empty:
             rename_map[col_ind_desc] = "DESCRIÇÃO"
         if col_ind_moi is not None:
             rename_map[col_ind_moi] = "MOI"
-
         tabela_indiretos_full = tabela_indiretos_full.rename(columns=rename_map)
 
         if "SETOR" in tabela_indiretos_full.columns:
             tabela_indiretos_full["SETOR"] = tabela_indiretos_full["SETOR"].astype(str).str.strip()
-
         if "DESCRIÇÃO" in tabela_indiretos_full.columns:
             tabela_indiretos_full["DESCRIÇÃO"] = tabela_indiretos_full["DESCRIÇÃO"].astype(str).str.strip()
-
         if "MOI" in tabela_indiretos_full.columns:
             tabela_indiretos_full["MOI"] = tabela_indiretos_full["MOI"].apply(_to_float).fillna(0.0)
-
         if "SETOR" in tabela_indiretos_full.columns:
             tabela_indiretos_full = tabela_indiretos_full[tabela_indiretos_full["SETOR"].str.upper() != "TOTAL"].copy()
 
@@ -778,6 +753,34 @@ else:
 
 
 # =========================================================
+# MÃO DE OBRA POR LINHA
+# =========================================================
+st.subheader("Mão de obra por linha")
+st.caption("Informe a quantidade de pessoas disponíveis em cada linha / Descrição CR para o cálculo real de gargalo.")
+
+desc_cr_base = _col_series(df0, col_F).dropna().astype(str).str.strip()
+desc_cr_unicas = sorted(pd.unique(desc_cr_base))
+mo_por_linha_map: Dict[str, float] = {}
+
+if len(desc_cr_unicas) == 0:
+    st.info("Não encontrei linhas / Descrição CR para parametrizar mão de obra.")
+else:
+    cols_mo = st.columns(2) if len(desc_cr_unicas) > 8 else [None]
+    use_two_cols_mo = len(cols_mo) == 2
+
+    for i, linha in enumerate(desc_cr_unicas):
+        target = cols_mo[i % 2] if use_two_cols_mo else st
+        mo_qtd = target.number_input(
+            label=f"MO disponível - {linha}",
+            min_value=0,
+            value=1,
+            step=1,
+            key=f"mo_linha__{_safe_key(linha)}"
+        )
+        mo_por_linha_map[str(linha)] = float(mo_qtd)
+
+
+# =========================================================
 # FILTRAR BASE
 # =========================================================
 filters = {
@@ -814,6 +817,12 @@ df["QTD_CENARIO"] = pd.to_numeric(qtd_cenario, errors="coerce").fillna(0.0).clip
 df["CARGA_MIN"] = df["TEMPO_IND_MIN"] * df["QTD_CENARIO"]
 df["HORAS_TRABALHADAS"] = df["CARGA_MIN"] / 60.0
 
+# capacidade de mão de obra por linha
+df["_DESC_CR_BASE_"] = _col_series(df, col_F).astype(str).str.strip()
+df["QTD_MO_LINHA"] = df["_DESC_CR_BASE_"].map(lambda x: float(mo_por_linha_map.get(str(x), 0.0)))
+df["CAP_MO_MIN"] = df["QTD_MO_LINHA"] * 500.0 * float(dias_uteis)
+df["CAP_MO_H"] = df["CAP_MO_MIN"] / 60.0
+
 col_takt = col_takt_linha or col_takt_dia
 if col_takt is None:
     df["TAKT_MIN"] = 0.0
@@ -834,39 +843,84 @@ else:
 cap_horas_programadas = float(n_cr_total) * float(horas_periodo)
 cap_horas_efetivas = cap_horas_programadas * float(oee) * float(eff_mo)
 
-# executivos
+# executivos gerais
 total_horas = float(df["HORAS_TRABALHADAS"].sum())
-util_pct = (total_horas / cap_horas_efetivas * 100.0) if cap_horas_efetivas > 0 else np.nan
+util_pct_geral = (total_horas / cap_horas_efetivas * 100.0) if cap_horas_efetivas > 0 else np.nan
 total_mod_min = float(df["CARGA_MIN"].sum())
 total_mod_pessoas = (total_mod_min / (MINUTOS_POR_PESSOA_DIA * float(dias_uteis))) if dias_uteis > 0 else np.nan
 total_pessoas_fabrica = float(total_mod_pessoas + moi_total_fixo) if not np.isnan(total_mod_pessoas) else float(moi_total_fixo)
 
+# base executiva por linha
 tmp_exec = df.copy()
 tmp_exec["_GRUPO_EXEC_"] = _col_series(df, col_F).astype(str).fillna("(vazio)")
+
 agg_exec = tmp_exec.groupby("_GRUPO_EXEC_", dropna=False).agg(
     horas=("HORAS_TRABALHADAS", "sum"),
+    carga_min=("CARGA_MIN", "sum"),
     n_cr=("_CR_CLEAN", pd.Series.nunique),
     qtd_modelos=(col_C, pd.Series.nunique),
+    qtd_mo_linha=("QTD_MO_LINHA", "max"),
 ).reset_index()
 
 agg_exec["cap_prog_h"] = agg_exec["n_cr"].astype(float) * float(horas_periodo)
 agg_exec["cap_efet_h"] = agg_exec["cap_prog_h"] * float(oee) * float(eff_mo)
-agg_exec["util_pct"] = np.where(agg_exec["cap_efet_h"] > 0, agg_exec["horas"] / agg_exec["cap_efet_h"] * 100.0, np.nan)
-agg_exec["horas_proj"] = agg_exec["horas"] * fator_previsao
-agg_exec["util_proj_pct"] = np.where(agg_exec["cap_efet_h"] > 0, agg_exec["horas_proj"] / agg_exec["cap_efet_h"] * 100.0, np.nan)
-agg_exec["score_ia"] = agg_exec["util_proj_pct"].fillna(0) + (agg_exec["qtd_modelos"].fillna(0) * 2.0)
 
-gargalo_atual, gargalo_atual_util = _seleciona_gargalo_real(agg_exec, "util_pct", "_GRUPO_EXEC_")
-gargalo_previsto, gargalo_previsto_util = _seleciona_gargalo_real(agg_exec, "util_proj_pct", "_GRUPO_EXEC_")
+agg_exec["cap_mo_min"] = agg_exec["qtd_mo_linha"] * 500.0 * float(dias_uteis)
+agg_exec["cap_mo_h"] = agg_exec["cap_mo_min"] / 60.0
+
+agg_exec["util_pct"] = np.where(
+    agg_exec["cap_efet_h"] > 0,
+    agg_exec["horas"] / agg_exec["cap_efet_h"] * 100.0,
+    np.nan
+)
+
+agg_exec["util_mo_pct"] = np.where(
+    agg_exec["cap_mo_min"] > 0,
+    agg_exec["carga_min"] / agg_exec["cap_mo_min"] * 100.0,
+    np.nan
+)
+
+agg_exec["util_gargalo_pct"] = np.maximum(
+    agg_exec["util_pct"].fillna(0.0),
+    agg_exec["util_mo_pct"].fillna(0.0)
+)
+
+agg_exec["horas_proj"] = agg_exec["horas"] * fator_previsao
+agg_exec["carga_min_proj"] = agg_exec["carga_min"] * fator_previsao
+
+agg_exec["util_proj_pct"] = np.where(
+    agg_exec["cap_efet_h"] > 0,
+    agg_exec["horas_proj"] / agg_exec["cap_efet_h"] * 100.0,
+    np.nan
+)
+
+agg_exec["util_mo_proj_pct"] = np.where(
+    agg_exec["cap_mo_min"] > 0,
+    agg_exec["carga_min_proj"] / agg_exec["cap_mo_min"] * 100.0,
+    np.nan
+)
+
+agg_exec["util_gargalo_proj_pct"] = np.maximum(
+    agg_exec["util_proj_pct"].fillna(0.0),
+    agg_exec["util_mo_proj_pct"].fillna(0.0)
+)
+
+gargalo_atual, gargalo_atual_util = _seleciona_gargalo_real(agg_exec, "util_gargalo_pct", "_GRUPO_EXEC_")
+gargalo_previsto, gargalo_previsto_util = _seleciona_gargalo_real(agg_exec, "util_gargalo_proj_pct", "_GRUPO_EXEC_")
 
 gargalo_atual_label = gargalo_atual if gargalo_atual else "Sem gargalo no cenário atual"
 gargalo_previsto_label = gargalo_previsto if gargalo_previsto else "Sem gargalo previsto"
 
-rank_exec = _ranking_gargalos_reais(agg_exec, "util_pct")
+rank_exec = _ranking_gargalos_reais(agg_exec, "util_gargalo_pct")
 rank_exec["meta"] = rank_exec.apply(
-    lambda r: f"{_fmt_br(float(r['util_pct']),1)}% • {_fmt_br(float(r['horas']),2)} h",
+    lambda r: (
+        f"Gargalo: {_fmt_br(float(r['util_gargalo_pct']),1)}% • "
+        f"Máq: {_fmt_br(float(r['util_pct']),1)}% • "
+        f"MO: {_fmt_br(float(r['util_mo_pct']),1)}%"
+    ),
     axis=1
 )
+
 
 # =========================================================
 # ABAS
@@ -879,101 +933,53 @@ aba0, aba1, aba2, aba3 = st.tabs(["Resumo Executivo", "Carga Máquina", "Mão de
 # =========================================================
 with aba0:
     st.subheader("Tela Inicial Executiva")
-    st.caption("Visão geral da fábrica com gargalo matemático real.")
+    st.caption("Visão geral da fábrica com gargalo matemático real por máquina ou mão de obra.")
 
     r1, r2, r3, r4 = st.columns(4)
     with r1:
-        st.markdown(_card_html(
-            "Carga Total",
-            f"{_fmt_br(total_horas)} h",
-            "Horas trabalhadas do cenário filtrado",
-            "card-blue"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Carga Total", f"{_fmt_br(total_horas)} h", "Horas trabalhadas do cenário filtrado", "card-blue"), unsafe_allow_html=True)
     with r2:
-        st.markdown(_card_html(
-            "Capacidade Efetiva",
-            f"{_fmt_br(cap_horas_efetivas)} h",
-            "Capacidade com OEE e eficiência MO",
-            "card-green"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Capacidade Efetiva", f"{_fmt_br(cap_horas_efetivas)} h", "Capacidade com OEE e eficiência MO", "card-green"), unsafe_allow_html=True)
     with r3:
-        st.markdown(_card_html(
-            "Utilização Geral",
-            f"{_fmt_br(util_pct,1)}%" if not np.isnan(util_pct) else "-",
-            "Carga ÷ capacidade efetiva",
-            "card-red" if (not np.isnan(util_pct) and util_pct > 100) else ("card-orange" if (not np.isnan(util_pct) and util_pct >= 85) else "card-green")
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Utilização Geral", f"{_fmt_br(util_pct_geral,1)}%" if not np.isnan(util_pct_geral) else "-", "Carga ÷ capacidade efetiva", "card-red" if (not np.isnan(util_pct_geral) and util_pct_geral > 100) else ("card-orange" if (not np.isnan(util_pct_geral) and util_pct_geral >= 85) else "card-green")), unsafe_allow_html=True)
     with r4:
-        st.markdown(_card_html(
-            "Pessoas Totais",
-            _fmt_br(total_pessoas_fabrica, 2),
-            "MOD estimada + MOI fixa",
-            "card-purple"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Pessoas Totais", _fmt_br(total_pessoas_fabrica, 2), "MOD estimada + MOI fixa", "card-purple"), unsafe_allow_html=True)
 
     r5, r6, r7, r8 = st.columns(4)
     with r5:
-        st.markdown(_card_html(
-            "MOD Estimada",
-            _fmt_br(total_mod_pessoas, 2) if not np.isnan(total_mod_pessoas) else "-",
-            f"Base: {int(MINUTOS_POR_PESSOA_DIA)} min/pessoa/dia",
-            "card-blue"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("MOD Estimada", _fmt_br(total_mod_pessoas, 2) if not np.isnan(total_mod_pessoas) else "-", f"Base: {int(MINUTOS_POR_PESSOA_DIA)} min/pessoa/dia", "card-blue"), unsafe_allow_html=True)
     with r6:
-        st.markdown(_card_html(
-            "MOI Fixa",
-            _fmt_br(moi_total_fixo, 0),
-            "Lida da aba INDIRETOS",
-            "card-purple"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("MOI Fixa", _fmt_br(moi_total_fixo, 0), "Lida da aba INDIRETOS", "card-purple"), unsafe_allow_html=True)
     with r7:
-        st.markdown(_card_html(
-            "Gargalo Atual",
-            gargalo_atual_label,
-            f"Utilização: {_fmt_br(gargalo_atual_util,1)}%" if not np.isnan(gargalo_atual_util) else "Nenhum recurso acima de 100%",
-            "card-red" if gargalo_atual else "card-gray"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Gargalo Atual", gargalo_atual_label, f"Utilização: {_fmt_br(gargalo_atual_util,1)}%" if not np.isnan(gargalo_atual_util) else "Nenhum recurso acima de 100%", "card-red" if gargalo_atual else "card-gray"), unsafe_allow_html=True)
     with r8:
-        st.markdown(_card_html(
-            "Gargalo Previsto",
-            gargalo_previsto_label,
-            f"Projeção: {_fmt_br(gargalo_previsto_util,1)}%" if not np.isnan(gargalo_previsto_util) else "Nenhum recurso projetado acima de 100%",
-            "card-red" if gargalo_previsto else "card-gray"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Gargalo Previsto", gargalo_previsto_label, f"Projeção: {_fmt_br(gargalo_previsto_util,1)}%" if not np.isnan(gargalo_previsto_util) else "Nenhum recurso projetado acima de 100%", "card-red" if gargalo_previsto else "card-gray"), unsafe_allow_html=True)
 
     c1, c2 = st.columns([1.1, 0.9], gap="large")
 
     with c1:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
-        st.subheader("Top 10 cargas por Descrição CR")
+        st.subheader("Top 10 cargas por linha")
 
         top_exec = agg_exec.sort_values("horas", ascending=False).head(10).copy()
-        top_exec["cor"] = top_exec["util_pct"].apply(lambda x: _util_color(float(x)) if pd.notna(x) else "#64748B")
+        top_exec["cor"] = top_exec["util_gargalo_pct"].apply(lambda x: _util_color(float(x)) if pd.notna(x) else "#64748B")
 
         base_exec = alt.Chart(top_exec).encode(
             x=alt.X("horas:Q", title="Horas"),
             y=alt.Y("_GRUPO_EXEC_:N", sort="-x", title="")
         )
 
-        glow_exec = base_exec.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            opacity=0.22,
-            size=28
-        ).encode(
+        glow_exec = base_exec.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, opacity=0.22, size=28).encode(
             color=alt.Color("cor:N", scale=None, legend=None)
         )
-
-        bars_exec = base_exec.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            size=16
-        ).encode(
+        bars_exec = base_exec.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=16).encode(
             color=alt.Color("cor:N", scale=None, legend=None),
             tooltip=[
-                alt.Tooltip("_GRUPO_EXEC_:N", title="Descrição CR"),
+                alt.Tooltip("_GRUPO_EXEC_:N", title="Linha"),
                 alt.Tooltip("horas:Q", title="Horas", format=",.2f"),
-                alt.Tooltip("util_pct:Q", title="Utilização", format=",.1f"),
+                alt.Tooltip("util_pct:Q", title="Util máquina", format=",.1f"),
+                alt.Tooltip("util_mo_pct:Q", title="Util MO", format=",.1f"),
+                alt.Tooltip("util_gargalo_pct:Q", title="Util gargalo", format=",.1f"),
             ],
         ).properties(height=360)
 
@@ -983,67 +989,10 @@ with aba0:
     with c2:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Ranking Executivo de Gargalos")
-
-        if (agg_exec["util_pct"] > 100).any():
-            _render_rank_bars(rank_exec, "_GRUPO_EXEC_", "util_pct", "meta", max_items=8)
+        if (agg_exec["util_gargalo_pct"] > 100).any():
+            _render_rank_bars(rank_exec, "_GRUPO_EXEC_", "util_gargalo_pct", "meta", max_items=8)
         else:
-            st.success("Sem gargalo no cenário atual. Nenhum recurso está acima de 100% de utilização.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    c3, c4 = st.columns([1.0, 1.0], gap="large")
-
-    with c3:
-        st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
-        st.subheader("Painel Executivo de Capacidade")
-
-        painel_exec = pd.DataFrame({
-            "Indicador": ["Carga Total", "Cap. Programada", "Cap. Efetiva"],
-            "Valor": [total_horas, cap_horas_programadas, cap_horas_efetivas],
-            "Cor": ["#2D9CFF", "#8B5CF6", "#14C38E"]
-        })
-
-        chart_painel = alt.Chart(painel_exec).mark_bar(cornerRadiusEnd=8).encode(
-            x=alt.X("Valor:Q", title="Horas"),
-            y=alt.Y("Indicador:N", title=""),
-            color=alt.Color("Cor:N", scale=None, legend=None),
-            tooltip=[
-                alt.Tooltip("Indicador:N", title="Indicador"),
-                alt.Tooltip("Valor:Q", title="Horas", format=",.2f")
-            ],
-        ).properties(height=240)
-
-        st.altair_chart(chart_painel, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with c4:
-        st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
-        st.subheader("Previsão Executiva")
-
-        pred_chart_df = agg_exec.sort_values("util_proj_pct", ascending=False).head(5).copy()
-        pred_chart_df["Cor"] = pred_chart_df["util_proj_pct"].apply(
-            lambda x: "#FF5A5F" if x > 100 else ("#FFB020" if x >= 85 else "#14C38E")
-        )
-
-        chart_pred_exec = alt.Chart(pred_chart_df).mark_bar(cornerRadiusEnd=8).encode(
-            x=alt.X("util_proj_pct:Q", title="Utilização projetada (%)"),
-            y=alt.Y("_GRUPO_EXEC_:N", sort="-x", title=""),
-            color=alt.Color("Cor:N", scale=None, legend=None),
-            tooltip=[
-                alt.Tooltip("_GRUPO_EXEC_:N", title="Descrição CR"),
-                alt.Tooltip("util_proj_pct:Q", title="Utilização projetada", format=",.1f"),
-            ],
-        ).properties(height=240)
-
-        st.altair_chart(chart_pred_exec, use_container_width=True)
-        st.markdown(
-            f"""
-            <div class="small-note">
-                Cenário de projeção ativo: <b>+{crescimento_pct}%</b> na demanda.<br>
-                Gargalo previsto: <b>{gargalo_previsto_label}</b>.
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+            st.success("Sem gargalo no cenário atual. Nenhuma linha está acima de 100%.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -1057,42 +1006,89 @@ with aba1:
     k1.metric("Horas trabalhadas (carga)", _fmt_br(total_horas))
     k2.metric("Capacidade programada (h)", _fmt_br(cap_horas_programadas))
     k3.metric("Capacidade efetiva (h)", _fmt_br(cap_horas_efetivas))
-    k4.metric("Utilização (%)", f"{_fmt_br(util_pct, 1)}%" if not np.isnan(util_pct) else "-")
+    k4.metric("Utilização (%)", f"{_fmt_br(util_pct_geral, 1)}%" if not np.isnan(util_pct_geral) else "-")
 
     st.divider()
 
     group_choice = st.selectbox(
         "Agrupar barras por",
-        options=[c for c in [col_R, col_F, col_J, col_C, cr_col] if c is not None],
+        options=[c for c in [col_F, col_R, col_J, col_C, cr_col] if c is not None],
         index=0,
         key="group_choice_maquina"
     )
 
-    tmp = df.copy()
-    tmp["_GRUPO_"] = _col_series(df, group_choice).astype(str).fillna("(vazio)")
+    group_name = str(group_choice).strip()
+    df["_GRUPO_"] = _col_series(df, group_choice).astype(str).fillna("(vazio)")
 
-    agg = tmp.groupby("_GRUPO_", dropna=False).agg(
+    linha_para_grupo = df[["_DESC_CR_BASE_", "_GRUPO_"]].drop_duplicates()
+    linha_caps = agg_exec[["_GRUPO_EXEC_", "cap_mo_min", "cap_mo_h"]].copy()
+    linha_caps = linha_caps.rename(columns={"_GRUPO_EXEC_": "_DESC_CR_BASE_"})
+    grupo_mo = linha_para_grupo.merge(linha_caps, on="_DESC_CR_BASE_", how="left")
+    grupo_mo = grupo_mo.groupby("_GRUPO_", dropna=False)[["cap_mo_min", "cap_mo_h"]].sum().reset_index()
+
+    agg = df.groupby("_GRUPO_", dropna=False).agg(
         horas=("HORAS_TRABALHADAS", "sum"),
+        carga_min=("CARGA_MIN", "sum"),
         takt_h=("TAKT_HORAS", "sum"),
         n_cr=("_CR_CLEAN", pd.Series.nunique),
         qtd_modelos=(col_C, pd.Series.nunique),
     ).reset_index()
 
+    agg = agg.merge(grupo_mo, on="_GRUPO_", how="left")
+    agg["cap_mo_min"] = agg["cap_mo_min"].fillna(0.0)
+    agg["cap_mo_h"] = agg["cap_mo_h"].fillna(0.0)
+
     agg["cap_prog_h"] = agg["n_cr"].astype(float) * float(horas_periodo)
     agg["cap_efet_h"] = agg["cap_prog_h"] * float(oee) * float(eff_mo)
-    agg["util_pct"] = np.where(agg["cap_efet_h"] > 0, agg["horas"] / agg["cap_efet_h"] * 100.0, np.nan)
-    agg["cor"] = agg["util_pct"].apply(lambda x: _util_color(float(x)) if not np.isnan(x) else "#64748B")
+
+    agg["util_pct"] = np.where(
+        agg["cap_efet_h"] > 0,
+        agg["horas"] / agg["cap_efet_h"] * 100.0,
+        np.nan,
+    )
+    agg["util_mo_pct"] = np.where(
+        agg["cap_mo_min"] > 0,
+        agg["carga_min"] / agg["cap_mo_min"] * 100.0,
+        np.nan,
+    )
+    agg["util_gargalo_pct"] = np.maximum(
+        agg["util_pct"].fillna(0.0),
+        agg["util_mo_pct"].fillna(0.0),
+    )
 
     agg["horas_proj"] = agg["horas"] * fator_previsao
-    agg["util_proj_pct"] = np.where(agg["cap_efet_h"] > 0, agg["horas_proj"] / agg["cap_efet_h"] * 100.0, np.nan)
+    agg["carga_min_proj"] = agg["carga_min"] * fator_previsao
 
-    gargalo_maquina_atual, gargalo_maquina_atual_util = _seleciona_gargalo_real(agg, "util_pct", "_GRUPO_")
-    gargalo_maquina_prev, gargalo_maquina_prev_util = _seleciona_gargalo_real(agg, "util_proj_pct", "_GRUPO_")
+    agg["util_proj_pct"] = np.where(
+        agg["cap_efet_h"] > 0,
+        agg["horas_proj"] / agg["cap_efet_h"] * 100.0,
+        np.nan,
+    )
+    agg["util_mo_proj_pct"] = np.where(
+        agg["cap_mo_min"] > 0,
+        agg["carga_min_proj"] / agg["cap_mo_min"] * 100.0,
+        np.nan,
+    )
+    agg["util_gargalo_proj_pct"] = np.maximum(
+        agg["util_proj_pct"].fillna(0.0),
+        agg["util_mo_proj_pct"].fillna(0.0),
+    )
 
-    rank_df = _ranking_gargalos_reais(agg, "util_pct").copy()
+    agg["cor"] = agg["util_gargalo_pct"].apply(
+        lambda x: _util_color(float(x)) if not np.isnan(x) else "#64748B"
+    )
+
+    gargalo_maquina_atual, gargalo_maquina_atual_util = _seleciona_gargalo_real(agg, "util_gargalo_pct", "_GRUPO_")
+    gargalo_maquina_prev, gargalo_maquina_prev_util = _seleciona_gargalo_real(agg, "util_gargalo_proj_pct", "_GRUPO_")
+
+    rank_df = _ranking_gargalos_reais(agg, "util_gargalo_pct").copy()
     rank_df["meta"] = rank_df.apply(
-        lambda r: f"{_fmt_br(float(r['util_pct']),1)}% • {_fmt_br(float(r['horas']),2)} h",
-        axis=1
+        lambda r: (
+            f"Gargalo: {_fmt_br(float(r['util_gargalo_pct']),1)}% • "
+            f"Máq: {_fmt_br(float(r['util_pct']),1)}% • "
+            f"MO: {_fmt_br(float(r['util_mo_pct']),1)}%"
+        ),
+        axis=1,
     )
 
     agg = agg.sort_values("horas", ascending=False)
@@ -1101,34 +1097,25 @@ with aba1:
 
     with c1:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
-        st.subheader("Carga por agrupamento")
-        st.markdown('<div class="neon-caption">O destaque visual não define gargalo. Gargalo real só existe acima de 100%.</div>', unsafe_allow_html=True)
+        st.subheader(f"Carga por agrupamento — {group_name}")
+        st.markdown('<div class="neon-caption">Gargalo real = maior restrição entre máquina e mão de obra.</div>', unsafe_allow_html=True)
 
         base = alt.Chart(agg).encode(
             x=alt.X("horas:Q", title="Horas (carga)"),
             y=alt.Y("_GRUPO_:N", sort="-x", title="")
         )
 
-        glow = base.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            opacity=0.22,
-            size=28
-        ).encode(
+        glow = base.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, opacity=0.22, size=28).encode(
             color=alt.Color("cor:N", scale=None, legend=None)
         )
-
-        bars = base.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            size=16
-        ).encode(
+        bars = base.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=16).encode(
             color=alt.Color("cor:N", scale=None, legend=None),
             tooltip=[
                 alt.Tooltip("_GRUPO_:N", title="Grupo"),
                 alt.Tooltip("horas:Q", title="Horas", format=",.2f"),
-                alt.Tooltip("cap_efet_h:Q", title="Cap. efetiva", format=",.2f"),
-                alt.Tooltip("util_pct:Q", title="Utilização %", format=",.1f"),
+                alt.Tooltip("util_pct:Q", title="Util máquina", format=",.1f"),
+                alt.Tooltip("util_mo_pct:Q", title="Util MO", format=",.1f"),
+                alt.Tooltip("util_gargalo_pct:Q", title="Util gargalo", format=",.1f"),
             ],
         ).properties(height=min(620, 28 * max(8, len(agg))))
 
@@ -1138,11 +1125,10 @@ with aba1:
     with c2:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Ranking de Gargalos - MES")
-
-        if (agg["util_pct"] > 100).any():
-            _render_rank_bars(rank_df, "_GRUPO_", "util_pct", "meta", max_items=6)
+        if (agg["util_gargalo_pct"] > 100).any():
+            _render_rank_bars(rank_df, "_GRUPO_", "util_gargalo_pct", "meta", max_items=6)
         else:
-            st.success("Sem gargalo na aba Carga Máquina. Nenhum agrupamento ultrapassa 100% da capacidade efetiva.")
+            st.success("Sem gargalo nesta visão. Nenhum agrupamento ultrapassa 100%.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     c3, c4 = st.columns([1.0, 1.0], gap="large")
@@ -1156,20 +1142,8 @@ with aba1:
             y=alt.Y("_GRUPO_:N", sort="-x", title="")
         )
 
-        glow2 = base2.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            opacity=0.20,
-            size=26,
-            color="#2D9CFF"
-        )
-
-        bars2 = base2.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            size=16,
-            color="#2D9CFF"
-        ).encode(
+        glow2 = base2.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, opacity=0.20, size=26, color="#2D9CFF")
+        bars2 = base2.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=16, color="#2D9CFF").encode(
             tooltip=[
                 alt.Tooltip("_GRUPO_:N", title="Grupo"),
                 alt.Tooltip("takt_h:Q", title="TAKT somado", format=",.2f"),
@@ -1198,11 +1172,10 @@ with aba1:
                 f"Cenário: +{crescimento_pct}% demanda",
                 "card-red"
             ), unsafe_allow_html=True)
-
             st.markdown(_card_html(
                 "Utilização Projetada",
                 f"{_fmt_br(gargalo_maquina_prev_util,1)}%",
-                f"Carga projetada: {_fmt_br(float(pred_linha['horas_proj']))} h • Cap.: {_fmt_br(float(pred_linha['cap_efet_h']))} h",
+                f"Máq: {_fmt_br(float(pred_linha['util_proj_pct']),1)}% • MO: {_fmt_br(float(pred_linha['util_mo_proj_pct']),1)}%",
                 "card-blue"
             ), unsafe_allow_html=True)
 
@@ -1219,6 +1192,7 @@ with aba1:
     detail = df[show_cols].copy()
     detail["QTD_CENARIO"] = df["QTD_CENARIO"].round(0)
     detail["HORAS_TRABALHADAS"] = df["HORAS_TRABALHADAS"].round(3)
+    detail["QTD_MO_LINHA"] = df["QTD_MO_LINHA"].round(0)
     detail["TAKT_HORAS"] = df["TAKT_HORAS"].round(3)
 
     st.dataframe(detail, use_container_width=True, height=420)
@@ -1270,6 +1244,7 @@ with aba2:
         minutos_totais=("CARGA_MIN", "sum"),
         modelos=(col_C, pd.Series.nunique),
         linhas=("CARGA_MIN", "size"),
+        mo_disponivel=("QTD_MO_LINHA", "max"),
     ).reset_index()
 
     agg_mo = agg_mo.sort_values("minutos_totais", ascending=False)
@@ -1302,49 +1277,19 @@ with aba2:
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown(_card_html(
-            "MOD Necessária",
-            _fmt_br(total_mod, 2),
-            f"Base: {_fmt_br(MINUTOS_POR_PESSOA_DIA,0)} min/pessoa/dia",
-            "card-blue"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("MOD Necessária", _fmt_br(total_mod, 2), f"Base: {_fmt_br(MINUTOS_POR_PESSOA_DIA,0)} min/pessoa/dia", "card-blue"), unsafe_allow_html=True)
     with c2:
-        st.markdown(_card_html(
-            "MOI Fixa",
-            _fmt_br(total_moi, 0),
-            "Lida da aba INDIRETOS",
-            "card-purple"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("MOI Fixa", _fmt_br(total_moi, 0), "Lida da aba INDIRETOS", "card-purple"), unsafe_allow_html=True)
     with c3:
-        st.markdown(_card_html(
-            "Total MOD + MOI",
-            _fmt_br(total_geral, 2),
-            f"Total arredondado: {total_geral_arred}",
-            "card-orange"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Total MOD + MOI", _fmt_br(total_geral, 2), f"Total arredondado: {total_geral_arred}", "card-orange"), unsafe_allow_html=True)
 
     c4, c5, c6 = st.columns(3)
     with c4:
-        st.markdown(_card_html(
-            "Pessoas Disponíveis",
-            _fmt_br(pessoas_disponiveis, 0),
-            "Valor informado para comparação",
-            "card-green"
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Pessoas Disponíveis", _fmt_br(pessoas_disponiveis, 0), "Valor informado para comparação", "card-green"), unsafe_allow_html=True)
     with c5:
-        st.markdown(_card_html(
-            "Saldo de Pessoas",
-            _fmt_br(saldo_pessoas, 2),
-            "Positivo = sobra • Negativo = falta",
-            cor_saldo
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Saldo de Pessoas", _fmt_br(saldo_pessoas, 2), "Positivo = sobra • Negativo = falta", cor_saldo), unsafe_allow_html=True)
     with c6:
-        st.markdown(_card_html(
-            "Ocupação da Equipe",
-            f"{_fmt_br(ocupacao_pessoas,1)}%" if not np.isnan(ocupacao_pessoas) else "-",
-            "Necessárias ÷ Disponíveis",
-            cor_ocup
-        ), unsafe_allow_html=True)
+        st.markdown(_card_html("Ocupação da Equipe", f"{_fmt_br(ocupacao_pessoas,1)}%" if not np.isnan(ocupacao_pessoas) else "-", "Necessárias ÷ Disponíveis", cor_ocup), unsafe_allow_html=True)
 
     st.markdown(
         f"""
@@ -1363,32 +1308,20 @@ with aba2:
 
     with g1:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
-        st.subheader("MOD por Descrição CR")
+        st.subheader("MOD por linha")
 
         base3 = alt.Chart(agg_mo).encode(
             x=alt.X("mod_pessoas:Q", title="Pessoas necessárias (MOD)"),
             y=alt.Y("_DESC_CR_:N", sort="-x", title="Descrição CR")
         )
 
-        glow3 = base3.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            opacity=0.20,
-            size=26,
-            color="#2D9CFF"
-        )
-
-        bars3 = base3.mark_bar(
-            cornerRadiusTopRight=7,
-            cornerRadiusBottomRight=7,
-            size=16,
-            color="#2D9CFF"
-        ).encode(
+        glow3 = base3.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, opacity=0.20, size=26, color="#2D9CFF")
+        bars3 = base3.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=16, color="#2D9CFF").encode(
             tooltip=[
-                alt.Tooltip("_DESC_CR_:N", title="Descrição CR"),
+                alt.Tooltip("_DESC_CR_:N", title="Linha"),
                 alt.Tooltip("minutos_totais:Q", title="Minutos totais", format=",.2f"),
                 alt.Tooltip("mod_pessoas:Q", title="MOD necessária", format=",.2f"),
-                alt.Tooltip("mod_pessoas_arred:Q", title="MOD arredondada"),
+                alt.Tooltip("mo_disponivel:Q", title="MO disponível", format=",.0f"),
             ],
         ).properties(height=min(720, 30 * max(8, len(agg_mo))))
 
@@ -1413,7 +1346,6 @@ with aba2:
         glow_h = chart_neon_h.mark_bar(cornerRadiusEnd=8, opacity=0.20, size=26).encode(
             color=alt.Color("Cor:N", scale=None, legend=None)
         )
-
         bars_h = chart_neon_h.mark_bar(cornerRadiusEnd=8, size=18).encode(
             color=alt.Color("Cor:N", scale=None, legend=None),
             tooltip=[
@@ -1423,35 +1355,20 @@ with aba2:
         ).properties(height=260)
 
         st.altair_chart(glow_h + bars_h, use_container_width=True)
-
-        comp_df = pd.DataFrame({
-            "nome": ["Necessárias", "Disponíveis"],
-            "valor": [total_geral, pessoas_disponiveis]
-        })
-        comp_df["meta"] = comp_df["valor"].apply(lambda x: f"{_fmt_br(float(x),2)} pessoas")
-
-        st.subheader("Ranking comparativo - MES")
-        _render_rank_bars(
-            comp_df.sort_values("valor", ascending=False),
-            "nome",
-            "valor",
-            "meta",
-            max_items=2
-        )
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
 
     t1, t2 = st.columns([1.2, 0.8], gap="large")
-
     with t1:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
-        st.markdown("### Tabela MOD por Descrição CR")
+        st.markdown("### Tabela MOD por linha")
         tabela_mod = agg_mo.rename(columns={
             "_DESC_CR_": "DESCRIÇÃO CR",
             "minutos_totais": "MINUTOS_TOTAIS",
             "modelos": "MODELOS",
             "linhas": "LINHAS",
+            "mo_disponivel": "MO_DISPONIVEL",
             "mod_pessoas": "MOD_PESSOAS",
             "mod_pessoas_arred": "MOD_PESSOAS_ARRED",
         }).copy()
@@ -1494,17 +1411,15 @@ with aba2:
 
     st.divider()
     d1, d2, d3 = st.columns(3)
-
     with d1:
         csv_mod = tabela_mod.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
-            "Baixar MOD por Descrição CR (CSV)",
+            "Baixar MOD por linha (CSV)",
             data=csv_mod,
-            file_name="mao_de_obra_direta_por_cr.csv",
+            file_name="mao_de_obra_direta_por_linha.csv",
             mime="text/csv",
             key="download_mod"
         )
-
     with d2:
         if not tabela_indiretos.empty:
             csv_moi = tabela_indiretos.to_csv(index=False).encode("utf-8-sig")
@@ -1515,7 +1430,6 @@ with aba2:
                 mime="text/csv",
                 key="download_moi"
             )
-
     with d3:
         csv_resumo = tabela_resumo_final.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
@@ -1544,28 +1458,11 @@ with aba3:
         qtd_descr_ind = int(tabela_indiretos_full["DESCRIÇÃO"].nunique()) if "DESCRIÇÃO" in tabela_indiretos_full.columns else 0
 
         with c1:
-            st.markdown(_card_html(
-                "MOI Total",
-                _fmt_br(total_moi_ind, 0),
-                "Soma total dos indiretos",
-                "card-purple"
-            ), unsafe_allow_html=True)
-
+            st.markdown(_card_html("MOI Total", _fmt_br(total_moi_ind, 0), "Soma total dos indiretos", "card-purple"), unsafe_allow_html=True)
         with c2:
-            st.markdown(_card_html(
-                "Setores",
-                str(qtd_setores_ind),
-                "Quantidade de setores cadastrados",
-                "card-blue"
-            ), unsafe_allow_html=True)
-
+            st.markdown(_card_html("Setores", str(qtd_setores_ind), "Quantidade de setores cadastrados", "card-blue"), unsafe_allow_html=True)
         with c3:
-            st.markdown(_card_html(
-                "Descrições",
-                str(qtd_descr_ind),
-                "Atividades indiretas cadastradas",
-                "card-green"
-            ), unsafe_allow_html=True)
+            st.markdown(_card_html("Descrições", str(qtd_descr_ind), "Atividades indiretas cadastradas", "card-green"), unsafe_allow_html=True)
 
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.markdown("### Tabela completa de indiretos")
@@ -1591,20 +1488,8 @@ with aba3:
                     y=alt.Y("DESCRIÇÃO:N", sort="-x", title="")
                 )
 
-                glow_ind = base_ind.mark_bar(
-                    cornerRadiusTopRight=7,
-                    cornerRadiusBottomRight=7,
-                    opacity=0.20,
-                    size=26,
-                    color="#8B5CF6"
-                )
-
-                bars_ind = base_ind.mark_bar(
-                    cornerRadiusTopRight=7,
-                    cornerRadiusBottomRight=7,
-                    size=16,
-                    color="#8B5CF6"
-                ).encode(
+                glow_ind = base_ind.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, opacity=0.20, size=26, color="#8B5CF6")
+                bars_ind = base_ind.mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=16, color="#8B5CF6").encode(
                     tooltip=[
                         alt.Tooltip("DESCRIÇÃO:N", title="Descrição"),
                         alt.Tooltip("MOI:Q", title="MOI", format=",.0f"),
