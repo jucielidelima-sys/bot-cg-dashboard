@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# ESTILO
+# CSS - VISUAL PRO MES
 # =========================================================
 st.markdown("""
 <style>
@@ -87,9 +87,27 @@ h1, h2, h3 {
     margin-bottom: 16px;
 }
 
+.stDataFrame, .stTable {
+    background: rgba(12,18,28,0.25);
+    border-radius: 12px;
+}
+
+div[data-testid="stMetric"] {
+    background: linear-gradient(180deg, rgba(26,35,50,0.90), rgba(17,24,39,0.92));
+    border: 1px solid rgba(120,180,255,0.18);
+    padding: 10px;
+    border-radius: 14px;
+}
+
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, rgba(13,19,29,0.98), rgba(10,14,22,0.98));
     border-right: 1px solid rgba(120,180,255,0.12);
+}
+
+hr {
+    border: none;
+    border-top: 1px solid rgba(140,180,255,0.15);
+    margin: 0.9rem 0 1.1rem 0;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -106,12 +124,13 @@ def _to_float(x):
             return float(x)
 
         s = str(x).strip()
+
         if s == "":
             return np.nan
 
         s = s.replace(" ", "")
 
-        # formato 1.234,56
+        # Ex.: 1.234,56 -> 1234.56
         if "," in s and "." in s:
             s = s.replace(".", "").replace(",", ".")
         elif "," in s:
@@ -143,6 +162,8 @@ def _num(df: pd.DataFrame, col: Optional[str]) -> pd.Series:
 
 
 def _find_col(df: pd.DataFrame, text: str) -> Optional[str]:
+    if df.empty:
+        return None
     for c in df.columns:
         if text.lower() in str(c).lower():
             return c
@@ -151,7 +172,6 @@ def _find_col(df: pd.DataFrame, text: str) -> Optional[str]:
 
 def _find_first_existing(df: pd.DataFrame, candidates):
     normalized = {str(c).strip().lower(): c for c in df.columns}
-
     for name in candidates:
         key = str(name).strip().lower()
         if key in normalized:
@@ -165,7 +185,7 @@ def _find_first_existing(df: pd.DataFrame, candidates):
     return None
 
 
-def _util_color(util):
+def _util_color(util: float) -> str:
     if util > 100:
         return "Crítico"
     if util >= 85:
@@ -173,23 +193,15 @@ def _util_color(util):
     return "Normal"
 
 
-def _status_text(util):
-    if util > 100:
-        return "CRÍTICO"
-    if util >= 85:
-        return "ATENÇÃO"
-    return "NORMAL"
-
-
-def _format_num(valor):
-    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def _format_pct(valor):
+def _format_pct(valor: float) -> str:
     return f"{valor:.1f}%"
 
 
-def _kpi_card(title, value, sub=""):
+def _format_num(valor: float) -> str:
+    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _kpi_card(title: str, value: str, sub: str = ""):
     st.markdown(
         f"""
         <div class="kpi-card">
@@ -202,11 +214,19 @@ def _kpi_card(title, value, sub=""):
     )
 
 
+def _status_text(util: float) -> str:
+    if util > 100:
+        return "CRÍTICO"
+    if util >= 85:
+        return "ATENÇÃO"
+    return "NORMAL"
+
+
 # =========================================================
-# LEITURA DO EXCEL
+# LOAD EXCEL
 # =========================================================
 if not os.path.exists(ARQUIVO_EXCEL):
-    st.error(f"Arquivo não encontrado: {ARQUIVO_EXCEL}")
+    st.error(f"Arquivo Excel não encontrado: {ARQUIVO_EXCEL}")
     st.stop()
 
 try:
@@ -221,18 +241,13 @@ except Exception as e:
     st.error(f"Erro ao ler a planilha principal: {e}")
     st.stop()
 
-# tenta ler aba de indiretos
-df_ind = pd.DataFrame()
-for nome_aba in ["INDIRETOS", "Indiretos", "indiretos"]:
-    if nome_aba in xls.sheet_names:
-        try:
-            df_ind = pd.read_excel(ARQUIVO_EXCEL, sheet_name=nome_aba)
-            break
-        except Exception:
-            pass
+try:
+    df_ind = pd.read_excel(ARQUIVO_EXCEL, sheet_name="INDIRETOS")
+except Exception:
+    df_ind = pd.DataFrame()
 
 # =========================================================
-# MAPA DE COLUNAS
+# MAPEAMENTO DE COLUNAS
 # =========================================================
 col_modelo = _find_first_existing(
     df0,
@@ -255,21 +270,21 @@ col_cr = _find_first_existing(
 )
 
 if col_modelo is None:
-    st.error("Não foi possível identificar a coluna de MODELO.")
+    st.error("Não foi possível identificar a coluna de MODELO na planilha principal.")
     st.stop()
 
 if col_linha is None:
-    st.error("Não foi possível identificar a coluna de LINHA.")
+    st.error("Não foi possível identificar a coluna de LINHA na planilha principal.")
     st.stop()
 
 # =========================================================
-# CABEÇALHO
+# TÍTULO
 # =========================================================
 st.markdown("""
 <div class="section-card">
     <h1 style="margin-bottom:0.2rem;">MES Industrial PRO</h1>
     <div style="color:#9EC5FF; font-size:1rem;">
-        Planejamento de carga, capacidade, gargalos e mão de obra
+        Planejamento de carga, capacidade, gargalos e mão de obra em ambiente industrial
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -278,9 +293,9 @@ st.markdown("""
 # SIDEBAR
 # =========================================================
 with st.sidebar:
-    st.markdown("## Configurações")
+    st.markdown("## Configurações do Cenário")
 
-    oee = st.slider("OEE", 0.50, 1.00, 0.85, 0.01)
+    oee = st.slider("OEE do cenário", min_value=0.50, max_value=1.00, value=0.85, step=0.01)
     dias = st.number_input("Dias produtivos", min_value=1, max_value=31, value=22, step=1)
     minutos_por_pessoa = st.number_input(
         "Minutos por pessoa/dia",
@@ -293,20 +308,23 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("## Filtros")
 
-    modelos_disp = sorted([x for x in df0[col_modelo].dropna().unique().tolist() if str(x).strip() != ""])
-    linhas_disp = sorted([x for x in df0[col_linha].dropna().unique().tolist() if str(x).strip() != ""])
+    modelos_disponiveis = sorted([x for x in df0[col_modelo].dropna().unique().tolist() if str(x).strip() != ""])
+    linhas_disponiveis = sorted([x for x in df0[col_linha].dropna().unique().tolist() if str(x).strip() != ""])
 
-    modelos = st.multiselect("Modelo", modelos_disp)
-    linhas = st.multiselect("Linha", linhas_disp)
+    modelos = st.multiselect("Modelo", modelos_disponiveis)
+    linhas = st.multiselect("Linha", linhas_disponiveis)
 
     if col_cr and col_cr in df0.columns:
-        cr_disp = sorted([x for x in df0[col_cr].dropna().unique().tolist() if str(x).strip() != ""])
-        filtros_cr = st.multiselect("CR", cr_disp)
+        cr_disponiveis = sorted([x for x in df0[col_cr].dropna().unique().tolist() if str(x).strip() != ""])
+        filtros_cr = st.multiselect("CR", cr_disponiveis)
     else:
         filtros_cr = []
 
+    st.markdown("---")
+    st.caption("A capacidade é ajustada pelo OEE e pela mão de obra informada por linha.")
+
 # =========================================================
-# FILTRO
+# FILTRO BASE
 # =========================================================
 df = df0.copy()
 
@@ -324,15 +342,16 @@ if df.empty:
     st.stop()
 
 # =========================================================
-# QTD POR MODELO
+# ENTRADA DE QUANTIDADE POR MODELO
 # =========================================================
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.subheader("Plano de Produção por Modelo")
 
 modelos_filtrados = sorted([x for x in df[col_modelo].dropna().unique().tolist() if str(x).strip() != ""])
-qty_map = {}
 
+qty_map = {}
 cols_qtd = st.columns(4)
+
 for i, modelo in enumerate(modelos_filtrados):
     with cols_qtd[i % 4]:
         qty_map[modelo] = st.number_input(
@@ -346,15 +365,16 @@ for i, modelo in enumerate(modelos_filtrados):
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# MO POR LINHA
+# ENTRADA DE MO POR LINHA
 # =========================================================
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.subheader("Mão de Obra por Linha")
 
 linhas_filtradas = sorted([x for x in df[col_linha].dropna().unique().tolist() if str(x).strip() != ""])
-mo_map = {}
 
+mo_map = {}
 cols_mo = st.columns(4)
+
 for i, linha in enumerate(linhas_filtradas):
     with cols_mo[i % 4]:
         mo_map[linha] = st.number_input(
@@ -388,7 +408,7 @@ df_calc["CAP_REAL_MIN"] = df_calc["CAP_BRUTA_MIN"] * float(oee)
 df_calc["CAP_REAL_H"] = df_calc["CAP_REAL_MIN"] / 60.0
 
 # =========================================================
-# AGRUPAMENTO
+# AGRUPAMENTO POR LINHA
 # =========================================================
 agg = (
     df_calc.groupby(col_linha, dropna=False)
@@ -429,7 +449,7 @@ agg["status_texto"] = agg["utilizacao_pct"].apply(_status_text)
 agg = agg.sort_values("utilizacao_pct", ascending=False).reset_index(drop=True)
 
 # =========================================================
-# GARGALO
+# GARGALOS
 # =========================================================
 gargalos = agg[agg["utilizacao_pct"] > 100].copy()
 
@@ -441,27 +461,34 @@ else:
     gargalo_pct = 0.0
 
 # =========================================================
-# KPIs
+# KPIs GERAIS
 # =========================================================
 total_horas = float(df_calc["HORAS_CARGA"].sum())
 total_cap_real_h = float(agg["cap_real_h"].sum())
+total_mo = float(agg["mo"].sum())
 util_global = (total_horas / total_cap_real_h * 100.0) if total_cap_real_h > 0 else 0.0
 
-c1, c2, c3, c4 = st.columns(4)
-with c1:
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
     _kpi_card("Carga Total", f"{_format_num(total_horas)} h", "Horas necessárias do plano")
-with c2:
+
+with col2:
     _kpi_card("Capacidade Real", f"{_format_num(total_cap_real_h)} h", f"OEE aplicado: {_format_pct(oee * 100)}")
-with c3:
+
+with col3:
     _kpi_card("Utilização Global", _format_pct(util_global), "Carga / capacidade real")
-with c4:
+
+with col4:
     if gargalo_principal == "Sem gargalo":
         _kpi_card("Gargalo Principal", "Sem gargalo", "Nenhuma linha acima de 100%")
     else:
         _kpi_card("Gargalo Principal", gargalo_principal, f"Utilização: {_format_pct(gargalo_pct)}")
 
+st.markdown("<br>", unsafe_allow_html=True)
+
 # =========================================================
-# GRÁFICO UTILIZAÇÃO
+# GRÁFICO 1 - UTILIZAÇÃO POR LINHA
 # =========================================================
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.subheader("Utilização por Linha")
@@ -500,7 +527,7 @@ st.altair_chart(chart_util + linha_100, use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# GRÁFICO CARGA X CAPACIDADE
+# GRÁFICO 2 - CARGA X CAPACIDADE
 # =========================================================
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.subheader("Carga x Capacidade Real por Linha")
@@ -573,7 +600,7 @@ st.dataframe(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# DIAGNÓSTICO DE GARGALOS
+# DETALHE DO GARGALO
 # =========================================================
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.subheader("Diagnóstico do Gargalo")
@@ -606,7 +633,7 @@ else:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# DETALHE POR MODELO
+# DETALHE DO PLANO POR MODELO
 # =========================================================
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.subheader("Plano Detalhado por Modelo")
@@ -641,56 +668,41 @@ st.dataframe(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# INDIRETOS / MOI - BLOCO CORRIGIDO
+# INDIRETOS / MOI
 # =========================================================
 if not df_ind.empty:
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Indiretos / MOI")
 
-    tabela_indiretos_full = df_ind.copy()
+    df_ind_calc = df_ind.copy()
 
-    # garante que a coluna MOI exista e nunca quebre
-    if "MOI" in tabela_indiretos_full.columns:
-        tabela_indiretos_full["MOI"] = tabela_indiretos_full["MOI"].apply(_to_float).fillna(0.0)
+    col_moi = _find_first_existing(df_ind_calc, ["MOI", "MÃO DE OBRA INDIRETA", "MAO DE OBRA INDIRETA"])
+    col_setor_ind = _find_first_existing(df_ind_calc, ["SETOR", "ÁREA", "AREA", "LINHA", "DEPARTAMENTO"])
+    col_qtd_ind = _find_first_existing(df_ind_calc, ["QTD", "QUANTIDADE", "TOTAL"])
+
+    if col_moi and col_moi in df_ind_calc.columns:
+        df_ind_calc["MOI_TRATADO"] = _num(df_ind_calc, col_moi).fillna(0.0)
     else:
-        col_moi_alt = _find_first_existing(
-            tabela_indiretos_full,
-            ["MOI", "MÃO DE OBRA INDIRETA", "MAO DE OBRA INDIRETA", "INDIRETOS"]
-        )
+        df_ind_calc["MOI_TRATADO"] = 0.0
 
-        if col_moi_alt and col_moi_alt in tabela_indiretos_full.columns:
-            tabela_indiretos_full["MOI"] = tabela_indiretos_full[col_moi_alt].apply(_to_float).fillna(0.0)
-        else:
-            tabela_indiretos_full["MOI"] = 0.0
-
-    col_setor_ind = _find_first_existing(
-        tabela_indiretos_full,
-        ["SETOR", "ÁREA", "AREA", "LINHA", "DEPARTAMENTO"]
-    )
-
-    col_qtd_ind = _find_first_existing(
-        tabela_indiretos_full,
-        ["QTD", "QUANTIDADE", "TOTAL"]
-    )
-
-    if col_qtd_ind and col_qtd_ind in tabela_indiretos_full.columns:
-        tabela_indiretos_full["QTD_TRATADA"] = tabela_indiretos_full[col_qtd_ind].apply(_to_float).fillna(0.0)
+    if col_qtd_ind and col_qtd_ind in df_ind_calc.columns:
+        df_ind_calc["QTD_TRATADA"] = _num(df_ind_calc, col_qtd_ind).fillna(0.0)
     else:
-        tabela_indiretos_full["QTD_TRATADA"] = 0.0
+        df_ind_calc["QTD_TRATADA"] = 0.0
 
-    total_moi = float(tabela_indiretos_full["MOI"].sum())
-    total_qtd_ind = float(tabela_indiretos_full["QTD_TRATADA"].sum())
+    total_moi = float(df_ind_calc["MOI_TRATADO"].sum())
+    total_qtd_ind = float(df_ind_calc["QTD_TRATADA"].sum()) if "QTD_TRATADA" in df_ind_calc.columns else 0.0
 
-    k1, k2 = st.columns(2)
-    with k1:
-        _kpi_card("MOI Total", _format_num(total_moi), "Soma tratada da aba de indiretos")
-    with k2:
-        _kpi_card("Qtd. Indiretos", _format_num(total_qtd_ind), "Total tratado")
+    c1, c2 = st.columns(2)
+    with c1:
+        _kpi_card("MOI Total", _format_num(total_moi), "Soma da planilha de indiretos")
+    with c2:
+        _kpi_card("Qtd. Indiretos", _format_num(total_qtd_ind), "Total tratado da aba indiretos")
 
-    if col_setor_ind and col_setor_ind in tabela_indiretos_full.columns:
+    if col_setor_ind:
         moi_setor = (
-            tabela_indiretos_full.groupby(col_setor_ind, dropna=False)
-            .agg(moi=("MOI", "sum"))
+            df_ind_calc.groupby(col_setor_ind, dropna=False)
+            .agg(moi=("MOI_TRATADO", "sum"))
             .reset_index()
             .sort_values("moi", ascending=False)
         )
@@ -712,7 +724,8 @@ if not df_ind.empty:
 
         st.altair_chart(chart_moi, use_container_width=True)
 
-    st.dataframe(tabela_indiretos_full, use_container_width=True, hide_index=True)
+    mostrar_cols = df_ind_calc.copy()
+    st.dataframe(mostrar_cols, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
