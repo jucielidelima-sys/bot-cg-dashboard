@@ -23,17 +23,23 @@ st.set_page_config(
 # FUNÇÕES BASE (CORRIGIDO ERRO)
 # =========================================================
 def _to_float(x):
-    if pd.isna(x):
-        return np.nan
-    if isinstance(x, (int, float)):
-        return float(x)
-
-    s = str(x).strip()
-    if s == "":
-        return np.nan
-
-    s = s.replace(".", "").replace(",", ".")
     try:
+        if pd.isna(x):
+            return np.nan
+        if isinstance(x, (int, float, np.integer, np.floating)):
+            return float(x)
+
+        s = str(x).strip()
+        if s == "":
+            return np.nan
+
+        s = s.replace(" ", "")
+
+        if "," in s and "." in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "," in s:
+            s = s.replace(",", ".")
+
         return float(s)
     except:
         return np.nan
@@ -134,7 +140,7 @@ for m in df[col_C].dropna().unique():
     qty_map[m] = st.number_input(f"{m}", 0, 100000, 0)
 
 # =========================================================
-# MO POR LINHA (CORREÇÃO DO GARGALO)
+# MO POR LINHA
 # =========================================================
 st.subheader("Mão de obra por linha")
 
@@ -173,10 +179,10 @@ agg["util_mo"] = np.where(
     0
 )
 
-agg["util"] = agg["util_mo"]  # gargalo real = MO agora
+agg["util"] = agg["util_mo"]
 
 # =========================================================
-# GARGALO REAL
+# GARGALO
 # =========================================================
 gargalos = agg[agg["util"] > 100].sort_values("util", ascending=False)
 
@@ -208,8 +214,16 @@ st.altair_chart(chart, use_container_width=True)
 st.dataframe(agg)
 
 # =========================================================
-# INDIRETOS
+# INDIRETOS (CORRIGIDO)
 # =========================================================
 if not df_ind.empty:
     st.subheader("Indiretos (MOI)")
-    st.dataframe(df_ind)
+
+    tabela_indiretos_full = df_ind.copy()
+
+    if "MOI" in tabela_indiretos_full.columns:
+        tabela_indiretos_full["MOI"] = tabela_indiretos_full["MOI"].apply(_to_float).fillna(0.0)
+    else:
+        tabela_indiretos_full["MOI"] = 0.0
+
+    st.dataframe(tabela_indiretos_full)
