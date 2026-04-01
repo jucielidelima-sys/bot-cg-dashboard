@@ -22,7 +22,7 @@ MINUTOS_POR_PESSOA_DIA = 500.0
 st.set_page_config(
     page_title="Dashboard MES Industrial",
     layout="wide",
-    initial_sidebar_state="collapsed",  # menu lateral recolhível / inicia recolhido
+    initial_sidebar_state="collapsed",
 )
 
 
@@ -187,11 +187,12 @@ section[data-testid="stSidebar"] {
     backdrop-filter: blur(10px);
 }
 
-.card-green { border-left: 6px solid #14C38E; box-shadow: 0 0 16px rgba(20,195,142,0.12), 0 8px 22px rgba(0,0,0,0.22); }
-.card-blue { border-left: 6px solid #2D9CFF; box-shadow: 0 0 16px rgba(45,156,255,0.14), 0 8px 22px rgba(0,0,0,0.22); }
-.card-orange { border-left: 6px solid #FFB020; box-shadow: 0 0 16px rgba(255,176,32,0.12), 0 8px 22px rgba(0,0,0,0.22); }
-.card-red { border-left: 6px solid #FF5A5F; box-shadow: 0 0 16px rgba(255,90,95,0.14), 0 8px 22px rgba(0,0,0,0.22); }
-.card-purple { border-left: 6px solid #8B5CF6; box-shadow: 0 0 16px rgba(139,92,246,0.14), 0 8px 22px rgba(0,0,0,0.22); }
+.card-green { border-left: 6px solid #14C38E; }
+.card-blue { border-left: 6px solid #2D9CFF; }
+.card-orange { border-left: 6px solid #FFB020; }
+.card-red { border-left: 6px solid #FF5A5F; }
+.card-purple { border-left: 6px solid #8B5CF6; }
+.card-gray { border-left: 6px solid #94A3B8; }
 
 .card-title {
     color: #B6C0CF;
@@ -216,13 +217,6 @@ section[data-testid="stSidebar"] {
 .small-note {
     color: #94A3B8;
     font-size: 0.82rem;
-}
-
-.kpi-grid-title {
-    color: #DDE6F3;
-    font-size: 1rem;
-    font-weight: 800;
-    margin-bottom: 10px;
 }
 
 .stTabs [data-baseweb="tab-list"] {
@@ -306,6 +300,7 @@ div[data-testid="stMetricValue"] {
 .rank-orange { background: linear-gradient(90deg, #FFB020, #FFD166); color: #FFB020; }
 .rank-green { background: linear-gradient(90deg, #14C38E, #42E2B8); color: #14C38E; }
 .rank-blue { background: linear-gradient(90deg, #2D9CFF, #62B7FF); color: #2D9CFF; }
+.rank-gray { background: linear-gradient(90deg, #64748B, #94A3B8); color: #94A3B8; }
 
 @keyframes growBar {
     from { width: 0; opacity: 0.75; }
@@ -416,7 +411,7 @@ def _apply_filters(df: pd.DataFrame, filters: Dict[str, List]) -> pd.DataFrame:
 
 
 def _util_color(util_pct: float) -> str:
-    if util_pct >= 100:
+    if util_pct > 100:
         return "#FF5A5F"
     if util_pct >= 85:
         return "#FFB020"
@@ -424,7 +419,7 @@ def _util_color(util_pct: float) -> str:
 
 
 def _rank_class(util_pct: float) -> str:
-    if util_pct >= 100:
+    if util_pct > 100:
         return "rank-red"
     if util_pct >= 85:
         return "rank-orange"
@@ -473,7 +468,7 @@ def _card_html(title: str, value: str, subtitle: str = "", color_class: str = "c
 
 def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, subtitle_col: Optional[str] = None, max_items: int = 5):
     if df_rank.empty:
-        st.info("Sem dados para ranking.")
+        st.info("Sem dados críticos para ranking.")
         return
 
     top = df_rank.head(max_items).copy()
@@ -484,7 +479,14 @@ def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, sub
         nome = str(row[label_col])
         valor = float(row[value_col]) if pd.notna(row[value_col]) else 0.0
         pct = max(4.0, min(100.0, (valor / vmax) * 100.0))
-        cls = _rank_class(valor)
+        if valor > 100:
+            cls = "rank-red"
+        elif valor >= 85:
+            cls = "rank-orange"
+        elif valor > 0:
+            cls = "rank-green"
+        else:
+            cls = "rank-gray"
         meta = str(row[subtitle_col]) if subtitle_col and subtitle_col in top.columns else _fmt_br(valor, 1)
 
         html_parts.append(f"""
@@ -502,6 +504,34 @@ def _render_rank_bars(df_rank: pd.DataFrame, label_col: str, value_col: str, sub
     st.markdown("".join(html_parts), unsafe_allow_html=True)
 
 
+def _seleciona_gargalo_real(df_agg: pd.DataFrame, col_util: str, col_nome: str):
+    """Retorna apenas gargalo real: utilização > 100%.
+    Se não houver, retorna indicador de sem gargalo."""
+    if df_agg.empty or col_util not in df_agg.columns:
+        return None, np.nan
+
+    criticos = df_agg[df_agg[col_util] > 100].copy()
+    if criticos.empty:
+        return None, np.nan
+
+    criticos = criticos.sort_values(col_util, ascending=False)
+    return str(criticos.iloc[0][col_nome]), float(criticos.iloc[0][col_util])
+
+
+def _ranking_gargalos_reais(df_agg: pd.DataFrame, col_util: str) -> pd.DataFrame:
+    """Prioriza gargalos reais (>100), depois atenção (85-100), depois demais."""
+    df_rank = df_agg.copy()
+    df_rank["_prioridade"] = np.select(
+        [
+            df_rank[col_util] > 100,
+            (df_rank[col_util] >= 85) & (df_rank[col_util] <= 100),
+        ],
+        [0, 1],
+        default=2
+    )
+    return df_rank.sort_values(["_prioridade", col_util], ascending=[True, False]).drop(columns="_prioridade")
+
+
 # =========================================================
 # HEADER
 # =========================================================
@@ -516,7 +546,7 @@ with col_head:
     st.markdown("""
     <div class="metal-header">
         <div class="metal-title">Dashboard MES Industrial</div>
-        <div class="metal-subtitle">Tela executiva da fábrica • Sala de controle operacional • Simulação de cenários</div>
+        <div class="metal-subtitle">Tela executiva da fábrica • Gargalo matemático real • Simulação de cenários</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -779,7 +809,6 @@ total_mod_min = float(df["CARGA_MIN"].sum())
 total_mod_pessoas = (total_mod_min / (MINUTOS_POR_PESSOA_DIA * float(dias_uteis))) if dias_uteis > 0 else np.nan
 total_pessoas_fabrica = float(total_mod_pessoas + moi_total_fixo) if not np.isnan(total_mod_pessoas) else float(moi_total_fixo)
 
-# base agrupada executiva
 tmp_exec = df.copy()
 tmp_exec["_GRUPO_EXEC_"] = _col_series(df, col_F).astype(str).fillna("(vazio)")
 agg_exec = tmp_exec.groupby("_GRUPO_EXEC_", dropna=False).agg(
@@ -787,19 +816,27 @@ agg_exec = tmp_exec.groupby("_GRUPO_EXEC_", dropna=False).agg(
     n_cr=("_CR_CLEAN", pd.Series.nunique),
     qtd_modelos=(col_C, pd.Series.nunique),
 ).reset_index()
+
 agg_exec["cap_prog_h"] = agg_exec["n_cr"].astype(float) * float(horas_periodo)
 agg_exec["cap_efet_h"] = agg_exec["cap_prog_h"] * float(oee) * float(eff_mo)
 agg_exec["util_pct"] = np.where(agg_exec["cap_efet_h"] > 0, agg_exec["horas"] / agg_exec["cap_efet_h"] * 100.0, np.nan)
 agg_exec["horas_proj"] = agg_exec["horas"] * fator_previsao
 agg_exec["util_proj_pct"] = np.where(agg_exec["cap_efet_h"] > 0, agg_exec["horas_proj"] / agg_exec["cap_efet_h"] * 100.0, np.nan)
 agg_exec["score_ia"] = agg_exec["util_proj_pct"].fillna(0) + (agg_exec["qtd_modelos"].fillna(0) * 2.0)
-agg_exec = agg_exec.sort_values("horas", ascending=False)
-agg_exec_pred = agg_exec.sort_values(["score_ia", "util_proj_pct"], ascending=False)
 
-gargalo_atual = str(agg_exec.iloc[0]["_GRUPO_EXEC_"]) if not agg_exec.empty else "-"
-gargalo_atual_util = float(agg_exec.iloc[0]["util_pct"]) if (not agg_exec.empty and pd.notna(agg_exec.iloc[0]["util_pct"])) else np.nan
-gargalo_previsto = str(agg_exec_pred.iloc[0]["_GRUPO_EXEC_"]) if not agg_exec_pred.empty else "-"
-gargalo_previsto_util = float(agg_exec_pred.iloc[0]["util_proj_pct"]) if (not agg_exec_pred.empty and pd.notna(agg_exec_pred.iloc[0]["util_proj_pct"])) else np.nan
+gargalo_atual, gargalo_atual_util = _seleciona_gargalo_real(agg_exec, "util_pct", "_GRUPO_EXEC_")
+gargalo_previsto, gargalo_previsto_util = _seleciona_gargalo_real(agg_exec, "util_proj_pct", "_GRUPO_EXEC_")
+
+gargalo_atual_label = gargalo_atual if gargalo_atual else "Sem gargalo no cenário atual"
+gargalo_previsto_label = gargalo_previsto if gargalo_previsto else "Sem gargalo previsto"
+
+rank_exec = _ranking_gargalos_reais(agg_exec, "util_pct")
+rank_exec["meta"] = rank_exec.apply(
+    lambda r: f"{_fmt_br(float(r['util_pct']),1)}% • {_fmt_br(float(r['horas']),2)} h",
+    axis=1
+)
+
+pred_exec_rank = _ranking_gargalos_reais(agg_exec.rename(columns={"util_proj_pct": "util_pct"}), "util_pct")
 
 
 # =========================================================
@@ -813,7 +850,7 @@ aba0, aba1, aba2, aba3 = st.tabs(["Resumo Executivo", "Carga Máquina", "Mão de
 # =========================================================
 with aba0:
     st.subheader("Tela Inicial Executiva")
-    st.caption("Visão geral da fábrica para acompanhamento rápido de capacidade, gargalos e mão de obra.")
+    st.caption("Visão geral da fábrica com gargalo matemático real.")
 
     r1, r2, r3, r4 = st.columns(4)
     with r1:
@@ -835,7 +872,7 @@ with aba0:
             "Utilização Geral",
             f"{_fmt_br(util_pct,1)}%" if not np.isnan(util_pct) else "-",
             "Carga ÷ capacidade efetiva",
-            "card-orange" if (not np.isnan(util_pct) and util_pct >= 85) else "card-green"
+            "card-red" if (not np.isnan(util_pct) and util_pct > 100) else ("card-orange" if (not np.isnan(util_pct) and util_pct >= 85) else "card-green")
         ), unsafe_allow_html=True)
     with r4:
         st.markdown(_card_html(
@@ -863,16 +900,16 @@ with aba0:
     with r7:
         st.markdown(_card_html(
             "Gargalo Atual",
-            gargalo_atual,
-            f"Utilização: {_fmt_br(gargalo_atual_util,1)}%" if not np.isnan(gargalo_atual_util) else "Sem dados",
-            "card-red" if (not np.isnan(gargalo_atual_util) and gargalo_atual_util >= 100) else "card-orange"
+            gargalo_atual_label,
+            f"Utilização: {_fmt_br(gargalo_atual_util,1)}%" if not np.isnan(gargalo_atual_util) else "Nenhum recurso acima de 100%",
+            "card-red" if gargalo_atual else "card-gray"
         ), unsafe_allow_html=True)
     with r8:
         st.markdown(_card_html(
             "Gargalo Previsto",
-            gargalo_previsto,
-            f"Projeção: {_fmt_br(gargalo_previsto_util,1)}%" if not np.isnan(gargalo_previsto_util) else "Sem dados",
-            "card-red" if (not np.isnan(gargalo_previsto_util) and gargalo_previsto_util >= 100) else "card-orange"
+            gargalo_previsto_label,
+            f"Projeção: {_fmt_br(gargalo_previsto_util,1)}%" if not np.isnan(gargalo_previsto_util) else "Nenhum recurso projetado acima de 100%",
+            "card-red" if gargalo_previsto else "card-gray"
         ), unsafe_allow_html=True)
 
     c1, c2 = st.columns([1.1, 0.9], gap="large")
@@ -881,7 +918,7 @@ with aba0:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Top 10 cargas por Descrição CR")
 
-        top_exec = agg_exec.head(10).copy()
+        top_exec = agg_exec.sort_values("horas", ascending=False).head(10).copy()
         top_exec["cor"] = top_exec["util_pct"].apply(lambda x: _util_color(float(x)) if pd.notna(x) else "#64748B")
 
         base_exec = alt.Chart(top_exec).encode(
@@ -918,12 +955,10 @@ with aba0:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Ranking Executivo de Gargalos")
 
-        rank_exec = agg_exec.sort_values("util_pct", ascending=False).copy()
-        rank_exec["meta"] = rank_exec.apply(
-            lambda r: f"{_fmt_br(float(r['util_pct']),1)}% • {_fmt_br(float(r['horas']),2)} h",
-            axis=1
-        )
-        _render_rank_bars(rank_exec, "_GRUPO_EXEC_", "util_pct", "meta", max_items=8)
+        if (agg_exec["util_pct"] > 100).any():
+            _render_rank_bars(rank_exec, "_GRUPO_EXEC_", "util_pct", "meta", max_items=8)
+        else:
+            st.success("Sem gargalo no cenário atual. Nenhum recurso está acima de 100% de utilização.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     c3, c4 = st.columns([1.0, 1.0], gap="large")
@@ -955,12 +990,12 @@ with aba0:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Previsão Executiva")
 
-        pred_exec = agg_exec_pred.head(5)[["_GRUPO_EXEC_", "util_proj_pct"]].copy()
-        pred_exec["Cor"] = pred_exec["util_proj_pct"].apply(
-            lambda x: "#FF5A5F" if x >= 100 else ("#FFB020" if x >= 85 else "#14C38E")
+        pred_chart_df = agg_exec.sort_values("util_proj_pct", ascending=False).head(5).copy()
+        pred_chart_df["Cor"] = pred_chart_df["util_proj_pct"].apply(
+            lambda x: "#FF5A5F" if x > 100 else ("#FFB020" if x >= 85 else "#14C38E")
         )
 
-        chart_pred_exec = alt.Chart(pred_exec).mark_bar(cornerRadiusEnd=8).encode(
+        chart_pred_exec = alt.Chart(pred_chart_df).mark_bar(cornerRadiusEnd=8).encode(
             x=alt.X("util_proj_pct:Q", title="Utilização projetada (%)"),
             y=alt.Y("_GRUPO_EXEC_:N", sort="-x", title=""),
             color=alt.Color("Cor:N", scale=None, legend=None),
@@ -975,7 +1010,7 @@ with aba0:
             f"""
             <div class="small-note">
                 Cenário de projeção ativo: <b>+{crescimento_pct}%</b> na demanda.<br>
-                Gargalo previsto principal: <b>{gargalo_previsto}</b>.
+                Gargalo previsto: <b>{gargalo_previsto_label}</b>.
             </div>
             """,
             unsafe_allow_html=True
@@ -1014,7 +1049,6 @@ with aba1:
         qtd_modelos=(col_C, pd.Series.nunique),
     ).reset_index()
 
-    agg = agg.sort_values("horas", ascending=False)
     agg["cap_prog_h"] = agg["n_cr"].astype(float) * float(horas_periodo)
     agg["cap_efet_h"] = agg["cap_prog_h"] * float(oee) * float(eff_mo)
     agg["util_pct"] = np.where(agg["cap_efet_h"] > 0, agg["horas"] / agg["cap_efet_h"] * 100.0, np.nan)
@@ -1023,14 +1057,24 @@ with aba1:
     agg["horas_proj"] = agg["horas"] * fator_previsao
     agg["util_proj_pct"] = np.where(agg["cap_efet_h"] > 0, agg["horas_proj"] / agg["cap_efet_h"] * 100.0, np.nan)
     agg["score_ia"] = agg["util_proj_pct"].fillna(0) + (agg["qtd_modelos"].fillna(0) * 2.0)
-    agg_pred = agg.sort_values(["score_ia", "util_proj_pct"], ascending=False).copy()
+
+    gargalo_maquina_atual, gargalo_maquina_atual_util = _seleciona_gargalo_real(agg, "util_pct", "_GRUPO_")
+    gargalo_maquina_prev, gargalo_maquina_prev_util = _seleciona_gargalo_real(agg, "util_proj_pct", "_GRUPO_")
+
+    rank_df = _ranking_gargalos_reais(agg, "util_pct").copy()
+    rank_df["meta"] = rank_df.apply(
+        lambda r: f"{_fmt_br(float(r['util_pct']),1)}% • {_fmt_br(float(r['horas']),2)} h",
+        axis=1
+    )
+
+    agg = agg.sort_values("horas", ascending=False)
 
     c1, c2 = st.columns([1.15, 0.85], gap="large")
 
     with c1:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Carga por agrupamento")
-        st.markdown('<div class="neon-caption">Glow neon com sobreposição para efeito visual industrial.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="neon-caption">O destaque visual não define gargalo. Gargalo real só existe acima de 100%.</div>', unsafe_allow_html=True)
 
         base = alt.Chart(agg).encode(
             x=alt.X("horas:Q", title="Horas (carga)"),
@@ -1060,25 +1104,17 @@ with aba1:
             ],
         ).properties(height=min(620, 28 * max(8, len(agg))))
 
-        cap_line = alt.Chart(pd.DataFrame({"x": [cap_horas_efetivas]})).mark_rule(
-            strokeDash=[6, 4],
-            color="#E2E8F0",
-            size=2
-        ).encode(x="x:Q")
-
-        st.altair_chart(glow + bars + cap_line, use_container_width=True)
+        st.altair_chart(glow + bars, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Ranking de Gargalos - MES")
 
-        rank_df = agg.sort_values("util_pct", ascending=False).copy()
-        rank_df["meta"] = rank_df.apply(
-            lambda r: f"{_fmt_br(float(r['util_pct']),1)}% • {_fmt_br(float(r['horas']),2)} h",
-            axis=1
-        )
-        _render_rank_bars(rank_df, "_GRUPO_", "util_pct", "meta", max_items=6)
+        if (agg["util_pct"] > 100).any():
+            _render_rank_bars(rank_df, "_GRUPO_", "util_pct", "meta", max_items=6)
+        else:
+            st.success("Sem gargalo na aba Carga Máquina. Nenhum agrupamento ultrapassa 100% da capacidade efetiva.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     c3, c4 = st.columns([1.0, 1.0], gap="large")
@@ -1119,45 +1155,29 @@ with aba1:
         st.markdown('<div class="glass-panel">', unsafe_allow_html=True)
         st.subheader("Previsão de Gargalo (IA simples)")
 
-        if agg_pred.empty:
-            st.info("Sem dados para projeção.")
+        if gargalo_maquina_prev is None:
+            st.markdown(_card_html(
+                "Projeção",
+                "Sem gargalo previsto",
+                f"Cenário: +{crescimento_pct}% demanda",
+                "card-gray"
+            ), unsafe_allow_html=True)
         else:
-            pred_top = agg_pred.iloc[0]
-            pred_nome = str(pred_top["_GRUPO_"])
-            pred_util = float(pred_top["util_proj_pct"]) if pd.notna(pred_top["util_proj_pct"]) else 0.0
-            pred_carga = float(pred_top["horas_proj"]) if pd.notna(pred_top["horas_proj"]) else 0.0
-            pred_cap = float(pred_top["cap_efet_h"]) if pd.notna(pred_top["cap_efet_h"]) else 0.0
-
+            pred_linha = agg[agg["_GRUPO_"] == gargalo_maquina_prev].iloc[0]
             st.markdown(_card_html(
                 "Gargalo Previsto",
-                pred_nome,
+                gargalo_maquina_prev,
                 f"Cenário: +{crescimento_pct}% demanda",
-                "card-red" if pred_util >= 100 else ("card-orange" if pred_util >= 85 else "card-green")
+                "card-red"
             ), unsafe_allow_html=True)
 
             st.markdown(_card_html(
                 "Utilização Projetada",
-                f"{_fmt_br(pred_util,1)}%",
-                f"Carga projetada: {_fmt_br(pred_carga)} h • Cap.: {_fmt_br(pred_cap)} h",
+                f"{_fmt_br(gargalo_maquina_prev_util,1)}%",
+                f"Carga projetada: {_fmt_br(float(pred_linha['horas_proj']))} h • Cap.: {_fmt_br(float(pred_linha['cap_efet_h']))} h",
                 "card-blue"
             ), unsafe_allow_html=True)
 
-            pred_small = agg_pred[["_GRUPO_", "util_proj_pct"]].copy().head(5)
-            pred_small["Cor"] = pred_small["util_proj_pct"].apply(
-                lambda x: "#FF5A5F" if x >= 100 else ("#FFB020" if x >= 85 else "#14C38E")
-            )
-
-            chart_pred = alt.Chart(pred_small).mark_bar(cornerRadiusEnd=8).encode(
-                x=alt.X("util_proj_pct:Q", title="Utilização projetada (%)"),
-                y=alt.Y("_GRUPO_:N", sort="-x", title=""),
-                color=alt.Color("Cor:N", scale=None, legend=None),
-                tooltip=[
-                    alt.Tooltip("_GRUPO_:N", title="Grupo"),
-                    alt.Tooltip("util_proj_pct:Q", title="Utilização projetada", format=",.1f"),
-                ],
-            ).properties(height=240)
-
-            st.altair_chart(chart_pred, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
